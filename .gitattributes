@@ -1,0 +1,4 @@
+# Same line endings for everyone, whatever OS they use
+* text=auto eol=lf
+*.png binary
+*.jpg binary
