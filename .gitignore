@@ -1,25 +1,27 @@
-# Dependencies
+# --- Frontend (Next.js) ---
 node_modules
-
-# Next.js build output
 .next/
 out/
 next-env.d.ts
 *.tsbuildinfo
+npm-debug.log*
+.vercel/
 
-# Environment variables (keep .env.example committed)
+# --- Backend (Python) ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Environment variables (keep .env.example committed) ---
 .env
 .env*.local
 
-# Logs
-npm-debug.log*
-
-# OS / editor
+# --- OS / editor ---
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
-
-# Vercel
-.vercel/
