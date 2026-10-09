@@ -1,0 +1,1 @@
+from component2.config import DB_PATH
