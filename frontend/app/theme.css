@@ -1,0 +1,15 @@
+@theme {
+  --color-background: oklch(0.985 0 0);
+  --color-foreground: oklch(0.21 0.01 260);
+  --color-surface: oklch(1 0 0);
+  --color-muted: oklch(0.55 0.01 260);
+  --color-border: oklch(0.9 0.005 260);
+  --color-primary: oklch(0.55 0.18 260);
+  --color-primary-foreground: oklch(0.985 0 0);
+
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 0.75rem;
+
+  --container-app: 28rem;
+}
