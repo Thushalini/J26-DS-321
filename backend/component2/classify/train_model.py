@@ -23,7 +23,7 @@ from sklearn.preprocessing import StandardScaler
 import joblib
 
 from component2.classify.keyword_baseline import PATTERNS
-from component2.config import MODEL_DIR
+from component2.config import LABEL_DIR, MODEL_DIR
 from component2.db import connect, save_labels
 
 MODEL_NAME = "all-MiniLM-L6-v2"
@@ -110,6 +110,18 @@ def main():
     print(f"Macro F1  MiniLM + LogReg (text only)   : {f1_score(y, y_text, average='macro', zero_division=0):.3f}")
     print(f"Macro F1  MiniLM + structure + tuned C  : {f1_score(y, y_pred, average='macro', zero_division=0):.3f}   (target >= 0.75)")
     print(f"Accuracy  final model                   : {np.mean(y_pred == y):.3f}")
+
+    # Round 2 items were chosen on purpose (rare stages), so also report the score on the
+    # round 1 items only - that sample was random, so it is the fair, unbiased estimate.
+    import csv
+    r1_file = LABEL_DIR / "rater1.csv"
+    if r1_file.exists() and (LABEL_DIR / "rater1_round2.csv").exists():
+        with open(r1_file, newline="", encoding="utf-8-sig") as f:
+            round1 = {row["activity_id"] for row in csv.DictReader(f)}
+        mask = np.array([i in round1 for i in gold_ids])
+        if mask.any():
+            print(f"Macro F1  final model, round-1 items only (random sample): "
+                  f"{f1_score(y[mask], y_pred[mask], average='macro', zero_division=0):.3f}  ({mask.sum()} items)")
 
     # Human ceiling: how well does one rater "predict" the other? A model can hardly beat this.
     r1 = dict(conn.execute("SELECT activity_id, stage FROM stage_labels WHERE labeller='rater1'").fetchall())

@@ -10,6 +10,12 @@ import styles from "./c2.module.css";
 import { STAGE_LABEL, topStagesText, windowMixChart } from "./charts";
 import type { WindowRoles } from "./types";
 
+function lastActiveText(ts: string | null) {
+  if (!ts) return "no activity yet";
+  const days = Math.floor((Date.now() - new Date(ts).getTime()) / 86_400_000);
+  return `last active ${ts.slice(0, 10)}${days > 0 ? ` (${days} day${days === 1 ? "" : "s"} ago)` : ""}`;
+}
+
 const WINDOWS = [
   { key: "3d", label: "3 days" },
   { key: "7d", label: "Week" },
@@ -78,7 +84,19 @@ export default function RolesCard({ teamId, names = {}, version = 0 }: { teamId:
             ))}
           </ul>
           {idle.length > 0 && (
-            <p className={styles.why}>No activity in this window: {idle.map((m) => names[m.member_id] ?? m.member_id).join(", ")}</p>
+            <div className={styles.idleBox} role="status">
+              <p className={styles.idleTitle}>No activity in this window ({idle.length})</p>
+              <ul className={styles.memberList}>
+                {idle.map((m) => (
+                  <li key={m.member_id} className={styles.memberItem}>
+                    <div className={styles.memberHead}>
+                      <MemberName code={m.member_id} names={names} />
+                      <span className={styles.why}>{lastActiveText(m.last_active)}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </>
       )}

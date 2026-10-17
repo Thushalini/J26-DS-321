@@ -47,6 +47,8 @@
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 0; }
 .stats dt { font-size: 0.75rem; color: var(--text-muted); }
 .stats dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.idleBox { margin-top: 12px; border: 1px solid #d03b3b55; background: #d03b3b0f; border-radius: 10px; padding: 10px 12px; }
+.idleTitle { margin: 0 0 4px; font-weight: 600; font-size: 0.9rem; }
 .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.82rem; white-space: nowrap; }
 
 .state { padding: 40px 0; text-align: center; color: var(--text-secondary); }

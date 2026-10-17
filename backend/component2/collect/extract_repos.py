@@ -25,7 +25,7 @@ import nbformat
 
 from component2.config import CANDIDATES_FILE, CLONE_DIR, RAW_DATA_DIR
 
-MAX_REPOS = 25
+MAX_REPOS = 40
 
 
 def safe_name(full_name):

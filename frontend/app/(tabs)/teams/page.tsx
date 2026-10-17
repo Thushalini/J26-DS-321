@@ -93,6 +93,11 @@ export default function TeamsPage() {
     await loadDetail(team!.team_id)
   }, "Saved. Run a sync (Behavior tab) so your commits are credited to you.")
 
+  const linkAuthor = (userId: string, identity: string) => run(async () => {
+    await api(`/app/teams/${team!.team_id}/link`, { method: "POST", json: { user_id: userId, identity } })
+    await loadDetail(team!.team_id)
+  }, "Linked. Run a sync (Behavior tab) so those commits are credited to that member.")
+
   const saveRepo = () => run(async () => {
     await api(`/app/teams/${team!.team_id}`, { method: "PUT", json: { repo_url: repo } })
     await Promise.all([loadDetail(team!.team_id), refreshTeams()])
@@ -102,6 +107,8 @@ export default function TeamsPage() {
   const research = teams.filter((t) => t.is_research)
   const me = detail?.members.find((m) => m.is_me)
   const canEditRepo = detail && !detail.is_research && (detail.my_role === "lead" || detail.my_role === "supervisor")
+  const canLink = canEditRepo
+  const linkable = detail?.members.filter((m) => m.user_id && m.member_code) ?? []
 
   return (
     <div className="flex flex-col gap-4">
@@ -177,6 +184,24 @@ export default function TeamsPage() {
                 {detail.unlinked_authors.map((a) => `${a.name} <${a.email}> (${a.commits})`).join(", ")}.
                 {" "}If one of these is you, add that name or email below and sync again.
               </Notice>
+            )}
+
+            {canLink && detail.unlinked_authors.length > 0 && (
+              <Field label="Link commits to a member" hint="Choose who wrote each unlinked author's commits. Then sync again.">
+                <ul className="flex flex-col gap-2">
+                  {detail.unlinked_authors.map((a) => (
+                    <li key={a.member_code} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <span className="min-w-0 truncate font-mono">{a.name} &lt;{a.email}&gt;</span>
+                      <select className={`${inputClass} w-auto`} defaultValue="" disabled={busy}
+                              aria-label={`Member who wrote ${a.name}'s commits`}
+                              onChange={(e) => e.target.value && linkAuthor(e.target.value, a.email || a.name)}>
+                        <option value="">Choose member…</option>
+                        {linkable.map((m) => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}
+                      </select>
+                    </li>
+                  ))}
+                </ul>
+              </Field>
             )}
 
             {me && me.team_role !== "supervisor" && (
