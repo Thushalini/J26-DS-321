@@ -1,0 +1,4 @@
+# Real chat and anything that can identify a person: NEVER commit these
+data/*
+!data/.gitkeep
+speaker_key.json
