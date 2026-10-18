@@ -1,5 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
+import { SessionProvider } from "@/lib/session"
 import { site } from "@/lib/site"
 import "./globals.css"
 
@@ -14,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   )
 }

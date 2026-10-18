@@ -6,10 +6,35 @@
   --color-border: oklch(0.9 0.005 260);
   --color-primary: oklch(0.55 0.18 260);
   --color-primary-foreground: oklch(0.985 0 0);
+  --color-danger: oklch(0.55 0.2 25);
+  --color-success: oklch(0.52 0.13 155);
+  --color-research: oklch(0.72 0.15 75);
+  --color-background: #f9f9f7;
+  --color-foreground: #0b0b0b;
+  --color-surface: #fcfcfb;
+  --color-muted: #52514e;
+  --color-subtle: #898781;
+  --color-border: #e1e0d9;
+  --color-primary: #2a78d6;
+  --color-primary-foreground: #fcfcfb;
 
-  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --color-chart-series: #2a78d6;
+  --color-chart-track: #cde2fb;
+  --color-chart-positive: #2a78d6;
+  --color-chart-negative: #e34948;
+  --color-chart-grid: #e1e0d9;
+  --color-chart-axis: #c3c2b7;
+
+  --color-status-good: #0ca30c;
+  --color-status-warning: #fab219;
+  --color-status-critical: #d03b3b;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --text-chart: 0.625rem;
 
   --radius-card: 0.75rem;
+  --radius-bar: 0.25rem;
 
   --container-app: 28rem;
 }

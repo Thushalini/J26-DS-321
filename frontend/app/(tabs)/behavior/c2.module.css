@@ -1,0 +1,65 @@
+/* Component 2 (Behavior tab) styles. Light only, to match the app shell. Colours are tokens in one place. */
+.root {
+  --surface-0: #f4f3f0;
+  --surface-1: #ffffff;
+  --border: #e4e3df;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #6f6e69;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 24px;
+}
+
+.header { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+.title { margin: 0; font-size: 1.15rem; font-weight: 600; }
+.subtitle { margin: 4px 0 0; color: var(--text-secondary); font-size: 0.9rem; }
+.filters { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.filters label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--text-secondary); flex: 1 1 140px; min-width: 0; }
+.filters select {
+  font: inherit; font-size: 0.9rem; padding: 6px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary); width: 100%;
+}
+
+.grid { display: flex; flex-direction: column; gap: 16px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+.cardTitle { margin: 0 0 4px; font-size: 1rem; font-weight: 600; }
+.cardNote { margin: 0 0 12px; color: var(--text-muted); font-size: 0.82rem; }
+
+.hero { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; color: var(--text-primary); border: 1px solid var(--border); background: var(--surface-0); }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.heroBadge { font-size: 1.05rem; padding: 6px 14px; }
+
+.driftList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.driftItem { border-top: 1px solid var(--border); padding-top: 10px; }
+.driftHead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+.dimName { font-weight: 600; text-transform: capitalize; }
+.planLine { margin: 4px 0 0; font-size: 0.88rem; color: var(--text-secondary); }
+.why { margin: 4px 0 0; font-size: 0.82rem; color: var(--text-muted); }
+
+.memberList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.memberItem { border-top: 1px solid var(--border); padding: 10px 0; }
+.memberHead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; }
+.roleName { font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0 0; }
+.stats dt { font-size: 0.75rem; color: var(--text-muted); }
+.stats dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.82rem; white-space: nowrap; }
+
+.state { padding: 40px 0; text-align: center; color: var(--text-secondary); }
+.error { color: #d03b3b; }
+
+.driftItem::marker, .memberItem::marker { content: ""; }
+.driftItem::before, .memberItem::before { content: none; }
+.driftList, .memberList { list-style: none; padding-left: 0; }
+
+.segmented { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.segment, .segmentOn {
+  font: inherit; font-size: 0.85rem; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-0); color: var(--text-secondary);
+}
+.segmentOn { background: var(--text-primary); border-color: var(--text-primary); color: var(--surface-1); font-weight: 600; }
+.segment:focus-visible, .segmentOn:focus-visible { outline: 2px solid #2a78d6; outline-offset: 2px; }

@@ -2,12 +2,17 @@
 Component 2 - Data collection, part 2: clone each candidate repo and save
 its commit history and notebook cells as JSON.
 
+Each notebook cell also gets the sha of the commit that wrote it (see cell_history),
+so a cell is credited to the person who wrote it, not whoever touched the notebook last.
+
 Run from the backend folder (after search_repos):
     python -m component2.collect.extract_repos
+    python -m component2.collect.extract_repos --refresh     (re-extract repos already done)
 Output (one folder per repo):
     component2/data/raw_data/<owner>__<repo>/commits.json
     component2/data/raw_data/<owner>__<repo>/notebooks.json
 """
+import argparse
 import json
 import os
 import shutil
@@ -66,7 +71,24 @@ def extract_commits(repo_path):
     return commits
 
 
+def cell_history(repo, rel_path):
+    """Cell-level 'git blame': cell text -> sha of the OLDEST commit whose version of
+    the notebook already contains exactly that text (= who wrote the cell as it is now, and when).
+    Renames are not followed, so cells older than a rename get the rename commit."""
+    first_seen = {}
+    for commit in reversed(list(repo.iter_commits(paths=rel_path))):    # oldest first
+        try:
+            raw = (commit.tree / rel_path).data_stream.read().decode("utf-8")
+            old_nb = nbformat.reads(raw, as_version=4)
+        except Exception:
+            continue                                   # file missing or unreadable in this version
+        for c in old_nb.cells:
+            first_seen.setdefault(c.source.strip(), commit.hexsha)
+    return first_seen
+
+
 def extract_notebooks(repo_path):
+    repo = git.Repo(repo_path)
     notebooks = []
     for nb_path in Path(repo_path).rglob("*.ipynb"):
         if ".ipynb_checkpoints" in str(nb_path):
@@ -76,12 +98,16 @@ def extract_notebooks(repo_path):
         except Exception as e:
             print(f"    Skipped unreadable notebook {nb_path.name}: {e}")
             continue
-        cells = [{"cell_type": c.cell_type, "source": c.source} for c in nb.cells]
+        rel_path = nb_path.relative_to(repo_path).as_posix()   # forward slashes, like git
+        first_seen = cell_history(repo, rel_path)
+        cells = [{"cell_type": c.cell_type, "source": c.source, "sha": first_seen.get(c.source.strip())}
+                 for c in nb.cells]
         notebooks.append({
-            "path": nb_path.relative_to(repo_path).as_posix(),   # forward slashes, like git
+            "path": rel_path,
             "n_cells": len(cells),
             "cells": cells,
         })
+    repo.close()  # release file handles so Windows can delete the clone
     return notebooks
 
 
@@ -91,6 +117,11 @@ def save_json(data, path):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--refresh", action="store_true",
+                    help="extract again even if a repo was already extracted (e.g. to add cell dates)")
+    args = ap.parse_args()
+
     with open(CANDIDATES_FILE, encoding="utf-8") as f:
         candidates = json.load(f)
 
@@ -102,7 +133,7 @@ def main():
         full_name = repo_info["full_name"]
         name = safe_name(full_name)
         out_path = RAW_DATA_DIR / name
-        if (out_path / "commits.json").exists():
+        if (out_path / "commits.json").exists() and not args.refresh:
             print(f"[{i}/{total}] {full_name}: already extracted, skipping")
             continue
         print(f"[{i}/{total}] Processing {full_name}")

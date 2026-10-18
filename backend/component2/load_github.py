@@ -54,18 +54,28 @@ def last_touch(commits, nb_path, resolver):
 
 
 def load_notebooks(repo_dir, resolver, commits):
+    """Each cell is credited to the commit that wrote it (cell 'sha' from extract_repos).
+    Cells without one (older extractions, renamed notebooks) fall back to the notebook's last touch."""
     nb_file = repo_dir / "notebooks.json"
     if not nb_file.exists():
         return []
     notebooks = json.loads(nb_file.read_text(encoding="utf-8"))
+    by_sha = {c["sha"]: c for c in commits if not is_noise(c)}
     rows = []
     for nb in notebooks:
-        member_id, ts = last_touch(commits, nb["path"], resolver)
-        if ts is None:
-            continue
+        last_member, last_ts = last_touch(commits, nb["path"], resolver)
         for i, cell in enumerate(nb["cells"]):
             source = cell["source"].strip()
             if not source:
+                continue
+            writer = by_sha.get(cell.get("sha"))
+            if writer:
+                member_id, ts = resolver.get_id(writer["author_name"], writer["author_email"]), to_utc(writer["timestamp"])
+                dated_by = "cell_history"
+            else:
+                member_id, ts = last_member, last_ts
+                dated_by = "last_touch"
+            if ts is None:
                 continue
             rows.append({
                 "activity_id": f"cell:{resolver.team_id}:{nb['path']}:{i}",
@@ -74,7 +84,8 @@ def load_notebooks(repo_dir, resolver, commits):
                 "member_id": member_id,
                 "ts": ts,
                 "text": resolver.scrub(source[:2000]),
-                "meta": {"notebook": nb["path"], "cell_type": cell["cell_type"], "cell_index": i},
+                "meta": {"notebook": nb["path"], "cell_type": cell["cell_type"], "cell_index": i,
+                         "dated_by": dated_by},
             })
     return rows
 

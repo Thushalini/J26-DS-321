@@ -7,6 +7,13 @@ requests
 GitPython
 nbformat
 python-dotenv
+sentence-transformers>=6.1.0
+#scikit-learn-1.9.1
+#numpy-2.4.6
+#pandas-3.0.6
+fastapi>=0.143.1
+uvicorn>=0.54.0
+psycopg[binary]>=3.1          # PostgreSQL / Supabase driver (used when DATABASE_URL is set)
 
 pandas>=2.0
 numpy>=1.24

@@ -1,17 +1,10 @@
 import type React from "react"
-import { AppHeader } from "@/components/app-header"
-import { BottomNav } from "@/components/bottom-nav"
+import { AppShell } from "@/components/app-shell"
 
 export default function TabsLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  return (
-    <div className="mx-auto flex min-h-dvh max-w-app flex-col">
-      <AppHeader />
-      <main className="flex-1 p-4">{children}</main>
-      <BottomNav />
-    </div>
-  )
+  return <AppShell>{children}</AppShell>
 }
