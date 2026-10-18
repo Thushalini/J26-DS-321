@@ -4,8 +4,9 @@ Run from the backend folder:
     python -m component1.state.train
 
 It compares a fixed-threshold rule, a Logistic Regression and a Random Forest, each on
-two feature sets: the four named in the proposal, and those four plus two extra
-signals (an ablation). It saves the best-configured Random Forest and a results file.
+three feature sets (an ablation): the four named in the proposal, those four plus two
+extra signals, and the four numbers the pipeline can really build today. It saves the
+Random Forest for the pipeline feature set, and a results file.
 
 READ THIS BEFORE QUOTING ANY NUMBER: the data is synthetic. A score here shows the
 pipeline works and what information the state needs. It does NOT show the model is
@@ -34,7 +35,16 @@ RESULTS_PATH = HERE / "results" / "state_classifier_results.json"
 FEATURE_SETS = {
     "proposal_4_features": list(range(len(PROPOSAL_FEATURES))),
     "extended_6_features": list(range(len(FEATURE_NAMES))),
+    # What the pipeline can really compute from the event log today. There is no real
+    # extraction confidence yet, and recency was random noise in the simulation.
+    "pipeline_4_features": [
+        FEATURE_NAMES.index("source_count"),
+        FEATURE_NAMES.index("agreement"),
+        FEATURE_NAMES.index("latest_hedged"),
+        FEATURE_NAMES.index("distinct_speakers"),
+    ],
 }
+SAVED_SET = "pipeline_4_features"
 
 
 def rule_baseline(X) -> np.ndarray:
@@ -74,7 +84,14 @@ def _fit_forest(X_train, y_train, seed: int, n_estimators: int):
     return search.best_estimator_, int(search.best_params_["min_samples_leaf"])
 
 
-def train_and_evaluate(n: int = 5000, seed: int = 42, n_estimators: int = 200, save: bool = True) -> dict:
+def train_and_evaluate(
+    n: int = 5000,
+    seed: int = 42,
+    n_estimators: int = 200,
+    save: bool = True,
+    model_path: Path = MODEL_PATH,
+    results_path: Path = RESULTS_PATH,
+) -> dict:
     X, y = generate_dataset(n, seed=seed)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=seed, stratify=y
@@ -117,14 +134,15 @@ def train_and_evaluate(n: int = 5000, seed: int = 42, n_estimators: int = 200, s
                 y_test, forest_pred, labels=LABELS, output_dict=True, zero_division=0
             ),
         }
-        if set_name == "extended_6_features":
+        if set_name == SAVED_SET:
             best_forest = (forest, names)
 
     if save and best_forest:
-        MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump({"model": best_forest[0], "labels": LABELS, "features": best_forest[1]}, MODEL_PATH)
-        RESULTS_PATH.write_text(json.dumps(results, indent=2), encoding="utf-8")
+        model_path, results_path = Path(model_path), Path(results_path)
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        results_path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({"model": best_forest[0], "labels": LABELS, "features": best_forest[1]}, model_path)
+        results_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     return results
 
 
@@ -139,10 +157,10 @@ if __name__ == "__main__":
         rf = s["random_forest"]
         print(f"  random forest          macro F1 {rf['macro_f1']:.3f}   accuracy {rf['accuracy']:.3f}   (min_samples_leaf={rf['min_samples_leaf']})")
         print("  forest importance:", s["random_forest_feature_importance"])
-    ext = r["feature_sets"]["extended_6_features"]["random_forest_confusion_matrix"]
-    print("\nConfusion matrix, extended features (rows = true, columns = predicted):")
+    ext = r["feature_sets"][SAVED_SET]["random_forest_confusion_matrix"]
+    print(f"\nConfusion matrix, saved model ({SAVED_SET}; rows = true, columns = predicted):")
     print("labels:", LABELS)
     for label, row in zip(LABELS, ext["rows_are_true_columns_are_predicted"]):
         print(f"  {label:<12}", row)
-    print(f"\nSaved model to {MODEL_PATH}")
+    print(f"\nSaved model ({SAVED_SET}) to {MODEL_PATH}")
     print(f"Saved results to {RESULTS_PATH}")
