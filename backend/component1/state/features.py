@@ -43,6 +43,7 @@ def mentions_for_field(events: Iterable, field_name) -> list[dict]:
             "value": normalize_value(p["new_value"]),
             "speaker": provenance.get("speaker"),
             "hedged": p.get("new_status") == "uncertain",
+            "original": p["new_value"],
         })
     return mentions
 

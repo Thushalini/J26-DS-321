@@ -159,3 +159,13 @@ def test_replay_rejects_a_hand_built_event_with_missing_status_and_a_value():
                          "confidence": 0.5, "provenance": prov().model_dump(mode="json")})
     with pytest.raises(ValidationError):
         apply_event(Blueprint(project_id="p1"), bad)
+
+
+def test_a_status_record_without_new_evidence_adds_no_source():
+    store = EventStore("p1")
+    store.update_field(FieldName.ALGORITHM, "XGBoost", FieldStatus.KNOWN, 0.5, prov("use XGBoost", "M1"), "extractor")
+    store.update_field(FieldName.ALGORITHM, "XGBoost", FieldStatus.CONFIRMED, 0.9, None, "state_classifier")
+    f = store.state.fields[FieldName.ALGORITHM]
+    assert f.status == FieldStatus.CONFIRMED and f.confidence == 0.9
+    assert len(f.provenance) == 1
+    assert store.rebuild().model_dump(mode="json") == store.state.model_dump(mode="json")

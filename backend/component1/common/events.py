@@ -62,7 +62,7 @@ def apply_event(state: Blueprint, event: Event) -> Blueprint:
             value=p["new_value"],
             status=FieldStatus(p["new_status"]),
             confidence=p["confidence"],
-            provenance=old.provenance + [Provenance.model_validate(p["provenance"])],
+            provenance=old.provenance + ([Provenance.model_validate(p["provenance"])] if p.get("provenance") else []),
             updated_at=event.created_at,
         )
 
@@ -132,7 +132,7 @@ class EventStore:
         value: str,
         status: FieldStatus,
         confidence: float,
-        provenance: Provenance,
+        provenance: Optional[Provenance],
         actor: str,
     ) -> Event:
         if status == FieldStatus.MISSING:
@@ -147,7 +147,7 @@ class EventStore:
             "old_status": current.status.value,
             "new_status": status.value,
             "confidence": confidence,
-            "provenance": provenance.model_dump(mode="json"),
+            "provenance": provenance.model_dump(mode="json") if provenance is not None else None,
         }
         return self._append(EventType.FIELD_UPDATED, payload, actor)
 
