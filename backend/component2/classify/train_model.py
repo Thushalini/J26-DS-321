@@ -30,8 +30,17 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 MAX_CHARS = 1000            # MiniLM reads ~256 words; longer text is cut anyway
 
 
+# A changed .py / .R file is code, like a notebook code cell; the gold labels have no raw code changes,
+# so the model sees them as the closest source it was trained on.
+TRAINED_AS = {"code_change": "notebook_cell"}
+
+
+def as_trained(source):
+    return TRAINED_AS.get(source, source)
+
+
 def model_input(source, text):
-    return f"[{source}] {text[:MAX_CHARS]}"     # telling the model where text came from helps it
+    return f"[{as_trained(source)}] {text[:MAX_CHARS]}"     # telling the model where text came from helps it
 
 
 def get_embeddings(conn):
@@ -66,6 +75,7 @@ def structure_features(conn, ids):
     rows = []
     for aid in ids:
         source, cell_type, text = info[aid]
+        source = as_trained(source)
         hits = [sum(1 for p in pats if p.search(text)) for pats in PATTERNS.values()]
         rows.append([source == s for s in SOURCES] + [cell_type == "markdown", len(text) < 40] + hits)
     return np.array(rows, dtype=float)

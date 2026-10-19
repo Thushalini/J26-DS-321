@@ -25,7 +25,7 @@ from component2.classify.keyword_baseline import classify
 from component2.collect.extract_repos import clone_repo, extract_commits, extract_notebooks, force_delete, save_json
 from component2.config import MODEL_DIR
 from component2.db import connect, save_activities, save_drift, save_labels, save_roles
-from component2.load_github import load_commits, load_notebooks
+from component2.load_github import is_noise, load_code_changes, load_commits, load_notebooks
 
 from buddy.store import now, one_as_dict, rows_as_dicts
 
@@ -98,7 +98,8 @@ def set_status(conn, team_id, status, message, finished=False):
 
 
 def load_repo_activities(conn, team_id, repo_url):
-    """Clone, extract and save the repo's commits + notebook cells. Returns (commits, cells)."""
+    """Clone, extract and save the repo's commits, notebook cells and code changes.
+    Returns (commits, cells, code files)."""
     with tempfile.TemporaryDirectory(prefix="buddy_sync_") as tmp:
         clone_path, raw_dir = Path(tmp) / "repo", Path(tmp) / "raw"
         raw_dir.mkdir()
@@ -113,11 +114,14 @@ def load_repo_activities(conn, team_id, repo_url):
         resolver = LinkedResolver(team_id, identity_map(conn, team_id))
         commit_rows, commits = load_commits(raw_dir, resolver)
         cell_rows = load_notebooks(raw_dir, resolver, commits)
+        code_rows = load_code_changes(resolver, commits)
         linked = set(resolver.identities.values())
         unlinked = {}
-        for c in commits:
-            code = resolver.get_id(c["author_name"], c["author_email"])
-            if code not in linked and "[bot]" not in c["author_name"].lower():
+        # Use the codes the saved commits actually got: resolving again here (merge commits included)
+        # could re-map a name to a linked member and hide authors that are really unlinked
+        for c, row in zip([c for c in commits if not is_noise(c)], commit_rows):
+            code = row["member_id"]
+            if code not in linked:
                 a = unlinked.setdefault(code, {"member_code": code, "name": c["author_name"],
                                                "email": c["author_email"], "commits": 0})
                 a["commits"] += 1
@@ -129,11 +133,11 @@ def load_repo_activities(conn, team_id, repo_url):
         conn.execute("DELETE FROM stage_labels WHERE activity_id = ?", (aid,))
     conn.execute("DELETE FROM activities WHERE team_id = ? AND source != 'chat'", (team_id,))
     conn.commit()
-    save_activities(conn, commit_rows + cell_rows)
+    save_activities(conn, commit_rows + cell_rows + code_rows)
     conn.execute("UPDATE teams SET unlinked_authors = ? WHERE team_id = ?",
                  (json.dumps(sorted(unlinked.values(), key=lambda a: -a["commits"])), team_id))
     conn.commit()
-    return len(commit_rows), len(cell_rows)
+    return len(commit_rows), len(cell_rows), len(code_rows)
 
 
 def label_team(conn, team_id):
@@ -185,8 +189,8 @@ def run_sync(team_id):
         summary = []
         if team.get("repo_url"):
             set_status(conn, team_id, "running", "Cloning the repository and reading commits + notebooks...")
-            n_commits, n_cells = load_repo_activities(conn, team_id, team["repo_url"])
-            summary.append(f"{n_commits} commits, {n_cells} notebook cells")
+            n_commits, n_cells, n_code = load_repo_activities(conn, team_id, team["repo_url"])
+            summary.append(f"{n_commits} commits, {n_cells} notebook cells, {n_code} changed code files")
         n_chat = conn.execute("SELECT COUNT(*) FROM activities WHERE team_id = ? AND source = 'chat'",
                               (team_id,)).fetchone()[0]
         summary.append(f"{n_chat} chat messages")

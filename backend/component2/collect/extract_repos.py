@@ -1,6 +1,7 @@
 """
 Component 2 - Data collection, part 2: clone each candidate repo and save
-its commit history and notebook cells as JSON.
+its commit history (with the lines each commit added to .py / .R files)
+and notebook cells as JSON.
 
 Each notebook cell also gets the sha of the commit that wrote it (see cell_history),
 so a cell is credited to the person who wrote it, not whoever touched the notebook last.
@@ -26,6 +27,8 @@ import nbformat
 from component2.config import CANDIDATES_FILE, CLONE_DIR, RAW_DATA_DIR
 
 MAX_REPOS = 40
+CODE_FILES = ("*.py", "*.R")     # code files read line by line (notebooks are read cell by cell instead)
+MAX_CODE_CHARS = 4000            # per file per commit; MiniLM and the drift patterns only need the start
 
 
 def safe_name(full_name):
@@ -48,7 +51,28 @@ def clone_repo(clone_url, dest_path):
                    check=True, timeout=300)
 
 
+def extract_code_added(repo_path):
+    """sha -> {code file: the lines that commit ADDED to it}, from one git call for the whole history.
+    Merge commits show no diff here, which is what we want (their changes are in the branch commits)."""
+    out = subprocess.run(["git", "-C", str(repo_path), "log", "--no-renames", "--unified=0", "-p",
+                          "--format=\x1e%H", "--", *CODE_FILES],
+                         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
+    added = {}
+    for record in out.split("\x1e")[1:]:
+        sha, _, patch = record.partition("\n")
+        files, current = {}, None
+        for line in patch.splitlines():
+            if line.startswith("+++ "):
+                current = line[6:] if line.startswith("+++ b/") else None     # "+++ /dev/null" = file deleted
+            elif current and line.startswith("+") and line[1:].strip():
+                files.setdefault(current, []).append(line[1:])
+        if files:
+            added[sha] = {path: "\n".join(lines)[:MAX_CODE_CHARS] for path, lines in files.items()}
+    return added
+
+
 def extract_commits(repo_path):
+    code_added = extract_code_added(repo_path)
     repo = git.Repo(repo_path)
     commits = []
     for commit in repo.iter_commits():
@@ -66,6 +90,7 @@ def extract_commits(repo_path):
             "files_changed": files_changed,
             "insertions": stats.get("insertions", 0),
             "deletions": stats.get("deletions", 0),
+            "code_added": code_added.get(commit.hexsha, {}),
         })
     repo.close()  # release file handles so Windows can delete the clone
     return commits

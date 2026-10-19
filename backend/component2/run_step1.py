@@ -9,12 +9,12 @@ def main():
     print(f"Found {len(repo_dirs)} repos in {RAW_DATA_DIR}")
 
     for repo_dir in repo_dirs:
-        commit_rows, cell_rows = load_repo(repo_dir)
-        new = save_activities(conn, commit_rows + cell_rows)
+        commit_rows, cell_rows, code_rows = load_repo(repo_dir)
+        new = save_activities(conn, commit_rows + cell_rows + code_rows)
         members = len({r["member_id"] for r in commit_rows})
         dated = sum(r["meta"]["dated_by"] == "cell_history" for r in cell_rows)
         print(f"  {repo_dir.name:<45} commits={len(commit_rows):<5} cells={len(cell_rows):<5} "
-              f"(own date: {dated:<5}) members={members:<3} new={new}")
+              f"(own date: {dated:<5}) code files={len(code_rows):<5} members={members:<3} new={new}")
 
     rows = conn.execute("SELECT source, COUNT(*) FROM activities GROUP BY source").fetchall()
     print("\nDatabase totals:", dict(rows))

@@ -67,8 +67,8 @@ def kappa_meaning(k):
 
 
 def main():
-    r1 = read_all(LABEL_DIR / "rater1.csv")
-    r2 = read_all(LABEL_DIR / "rater2.csv")
+    r1 = read_all("rater1")
+    r2 = read_all("rater2")
     both = sorted(set(r1) & set(r2))
     if not both:
         print("No items labelled by both raters yet.")

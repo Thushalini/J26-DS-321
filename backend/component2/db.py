@@ -71,7 +71,7 @@ class Connection:
                              "(leave it empty to use the local SQLite file).")
         if self.is_postgres:
             import psycopg                      # pip install "psycopg[binary]"
-            self.raw = psycopg.connect(url)
+            self.raw = psycopg.connect(url, connect_timeout=10)
         else:
             global _warned_sqlite
             if not _warned_sqlite:

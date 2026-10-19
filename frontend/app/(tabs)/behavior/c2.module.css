@@ -51,6 +51,11 @@
 .idleTitle { margin: 0 0 4px; font-weight: 600; font-size: 0.9rem; }
 .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.82rem; white-space: nowrap; }
 
+.tableWrap { overflow-x: auto; }
+.whoTable { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.whoTable th { text-align: left; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); padding: 0 8px 6px 0; }
+.whoTable td { border-top: 1px solid var(--border); padding: 8px 8px 8px 0; vertical-align: top; overflow-wrap: anywhere; }
+
 .state { padding: 40px 0; text-align: center; color: var(--text-secondary); }
 .error { color: #d03b3b; }
 

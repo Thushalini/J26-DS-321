@@ -12,6 +12,8 @@ Then both methods judge every window:
   - BASELINE    : exact keyword - a mention is on plan only if the blueprint
                   words appear literally in the text
 and we report accuracy for each. Target: >= 0.80 detection accuracy.
+The same windows are judged again written as code diffs (each text among ordinary code lines),
+because drift is also read from the code lines commits add to .py files.
 
 Run from backend:
     python -m component2.drift.evaluate_drift
@@ -64,6 +66,29 @@ CASES = {
         "tenure": (["tenure"], ["y = df['tenure']", "target = 'tenure'"]),
     },
 }
+
+
+# Ordinary code lines with no algorithm / metric / target in them, to bury each text inside a "code diff"
+BOILERPLATE = [
+    "import pandas as pd", "import numpy as np", "import matplotlib.pyplot as plt",
+    "df = pd.read_csv('data/train.csv')", "df = df.dropna()", "print(df.shape)",
+    "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)",
+    "plt.figure(figsize=(8, 5))", "plt.savefig('out.png')", "def main():", "    return result",
+]
+
+
+def as_code_diffs(windows, rng):
+    """Same windows, but every text becomes a few added code lines with the mention among them,
+    like the code_change activities read from a commit's .py files."""
+    out = []
+    for w in windows:
+        texts = []
+        for t in w["texts"]:
+            lines = rng.sample(BOILERPLATE, 4) + [t]
+            rng.shuffle(lines)
+            texts.append("\n".join(lines))
+        out.append({**w, "texts": texts})
+    return out
 
 
 def baseline_score(planned, texts, dim):
@@ -146,6 +171,12 @@ def main():
     false_alarms_base = sum(1 for r in rows if r["true_severity"] == "none" and r["baseline_severity"] != "none")
     false_alarms_ours = sum(1 for r in rows if r["true_severity"] == "none" and r["our_severity"] != "none")
     print(f"\nFalse alarms on windows with NO real drift: ours {false_alarms_ours}, baseline {false_alarms_base}")
+
+    # 3) The same windows written as code diffs (mentions buried among ordinary code lines)
+    diff_rows = judge(as_code_diffs(windows, random.Random(SEED)))
+    print(f"\nSame windows as code diffs ({len(BOILERPLATE)} kinds of boilerplate line mixed in):")
+    print(f"  detect: ours {accuracy(diff_rows, 'our', 'detect'):.2f}  baseline {accuracy(diff_rows, 'baseline', 'detect'):.2f}"
+          f"  | severity: ours {accuracy(diff_rows, 'our', 'severity'):.2f}  baseline {accuracy(diff_rows, 'baseline', 'severity'):.2f}")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / "drift_evaluation.csv"

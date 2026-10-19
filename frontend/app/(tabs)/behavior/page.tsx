@@ -7,6 +7,7 @@ import { Button } from "@/components/ui";
 import { api, memberNames, shortDate, type SyncStatus, type TeamDetail } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import Dashboard from "./Dashboard";
+import WhoIsWho from "./WhoIsWho";
 import styles from "./c2.module.css";
 import type { Summary } from "./types";
 
@@ -94,6 +95,8 @@ export default function BehaviorPage() {
   }, [refreshTeams]);
 
   if (!team) return null;
+  const showWho = detail && !detail.is_research && !detail.anonymised
+    && (detail.my_role === "lead" || detail.my_role === "supervisor");
 
   return (
     <div className={styles.root}>
@@ -113,6 +116,7 @@ export default function BehaviorPage() {
       </header>
 
       {!team.is_research && <SyncPanel teamId={team.team_id} canSync={team.my_role !== "viewer"} onDone={onSynced} />}
+      {showWho && <WhoIsWho detail={detail} />}
 
       {error && <p className={styles.state} role="status">{error}</p>}
       {!error && loading && <p className={styles.state}>Loading…</p>}
