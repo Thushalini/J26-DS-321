@@ -4,6 +4,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 
+import { PanelReview } from "@/components/supervisor/panel-review"
+import { PastGroups } from "@/components/supervisor/past-groups"
+import { SupervisorCode } from "@/components/supervisor/supervisor-code"
+import { SupervisedGroups } from "@/components/supervisor/supervised-groups"
 import { Button, Card, Field, Notice, Pill, inputClass } from "@/components/ui"
 import { api, ROLE_LABEL, shortDate, type Team, type TeamDetail } from "@/lib/api"
 import { useSession } from "@/lib/session"
@@ -39,10 +43,13 @@ export default function TeamsPage() {
   const [msg, setMsg] = useState("")
   const [newTeam, setNewTeam] = useState({ name: "", repo_url: "" })
   const [code, setCode] = useState("")
+  const [supervisorCode, setSupervisorCode] = useState("")
   const [identities, setIdentities] = useState("")
   const [repo, setRepo] = useState("")
   const [busy, setBusy] = useState(false)
   const examiner = user?.role === "examiner"
+  const supervisor = user?.role === "supervisor"
+  const student = user?.role === "student"
 
   const loadDetail = useCallback(async (id: string) => {
     const d = await api<TeamDetail>(`/app/teams/${encodeURIComponent(id)}`)
@@ -88,6 +95,20 @@ export default function TeamsPage() {
     setCode("")
   }, "You joined the team.")
 
+  const addSupervisor = () => run(async () => {
+    await api(`/app/teams/${team!.team_id}/supervisors`, { method: "POST", json: { supervisor_code: supervisorCode } })
+    await loadDetail(team!.team_id)
+    setSupervisorCode("")
+  }, "Supervisor added.")
+
+  const removeMember = (userId: string, name: string | null) => {
+    if (!window.confirm(`Remove ${name ?? "this member"} from the team?`)) return
+    run(async () => {
+      await api(`/app/teams/${team!.team_id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" })
+      await Promise.all([loadDetail(team!.team_id), refreshTeams()])
+    }, "Member removed.")
+  }
+
   const saveIdentities = () => run(async () => {
     await api(`/app/teams/${team!.team_id}/me`, { method: "PUT", json: { git_identities: identities.split(/[\n,]/) } })
     await loadDetail(team!.team_id)
@@ -98,7 +119,7 @@ export default function TeamsPage() {
     await Promise.all([loadDetail(team!.team_id), refreshTeams()])
   }, "Repository link saved.")
 
-  const mine = teams.filter((t) => !t.is_research)
+  const mine = teams.filter((t) => !t.is_research && t.my_role !== "panel" && !t.archived)
   const research = teams.filter((t) => t.is_research)
   const me = detail?.members.find((m) => m.is_me)
   const canEditRepo = detail && !detail.is_research && (detail.my_role === "lead" || detail.my_role === "supervisor")
@@ -108,16 +129,23 @@ export default function TeamsPage() {
       {error && <Notice tone="error">{error}</Notice>}
       {msg && <Notice tone="success">{msg}</Notice>}
 
-      {!examiner && (
-        <Card title="Join a team" note={user?.role === "supervisor" ? "Use the code a team shared with you to supervise it." : "Got a code from your team lead? Enter it here."}>
+      {student && (
+        <Card title="Join a team" note="Got a code from your team lead? Enter it here.">
           <div className="flex gap-2">
-            <input className={inputClass} placeholder="e.g. 3F9A-C21B" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Join code" />
+            <input className={inputClass} placeholder="e.g. H79-KN5" value={code} onChange={(e) => setCode(e.target.value)} aria-label="Join code" />
             <Button onClick={join} disabled={busy || !code.trim()}>Join</Button>
           </div>
         </Card>
       )}
 
-      <Card title={examiner ? "Current teams (anonymised)" : user?.role === "student" ? "My teams" : "Teams I supervise"}
+      {supervisor && (
+        <SupervisedGroups teams={mine} openId={team?.team_id} onOpen={selectTeam} onChanged={refreshTeams} onError={setError} />
+      )}
+
+      {supervisor && <PanelReview onError={setError} />}
+
+      {!supervisor && (
+      <Card title={examiner ? "Current teams (anonymised)" : "My teams"}
             note={examiner
               ? "Every real team, read-only. Names, emails, repo links and chat are hidden; members appear as codes."
               : mine.length ? "Tap a team to open it." : "No teams yet."}>
@@ -127,6 +155,7 @@ export default function TeamsPage() {
           </ul>
         )}
       </Card>
+      )}
 
       {detail && (
         <Card title={detail.name} note={detail.is_research ? detail.label : detail.anonymised ? "Anonymised, read-only" : `Your role: ${ROLE_LABEL[detail.my_role]}`}>
@@ -134,7 +163,7 @@ export default function TeamsPage() {
             {detail.join_code && (
               <div className="flex items-center justify-between rounded-lg border border-border bg-background p-3">
                 <div>
-                  <p className="text-xs text-muted">Join code: share with teammates and your supervisor</p>
+                  <p className="text-xs text-muted">Join code: share it with your teammates</p>
                   <p className="font-mono text-lg font-semibold tracking-wider">{detail.join_code}</p>
                 </div>
                 <Button variant="secondary" onClick={() => navigator.clipboard?.writeText(detail.join_code!)}>Copy</Button>
@@ -165,6 +194,10 @@ export default function TeamsPage() {
                       {m.team_role !== "supervisor" && !detail.is_research && !detail.anonymised && (
                         <span className="text-xs text-muted">{m.git_identities.length ? `${m.git_identities.length} git id${m.git_identities.length > 1 ? "s" : ""}` : "no git id"}</span>
                       )}
+                      {detail.my_role === "lead" && m.team_role === "member" && m.user_id && (
+                        <Button variant="ghost" className="px-1 py-0 text-xs text-danger" disabled={busy}
+                                onClick={() => removeMember(m.user_id!, m.name)}>Remove</Button>
+                      )}
                     </span>
                   </li>
                 ))}
@@ -177,6 +210,16 @@ export default function TeamsPage() {
                 {detail.unlinked_authors.map((a) => `${a.name} <${a.email}> (${a.commits})`).join(", ")}.
                 {" "}If one of these is you, add that name or email below and sync again.
               </Notice>
+            )}
+
+            {!detail.is_research && (detail.my_role === "lead" || detail.my_role === "member") && (
+              <Field label="Add your supervisor" hint="Ask your supervisor for their supervisor code.">
+                <div className="flex gap-2">
+                  <input className={inputClass} placeholder="e.g. 4QX-72B" value={supervisorCode}
+                         onChange={(e) => setSupervisorCode(e.target.value)} />
+                  <Button variant="secondary" onClick={addSupervisor} disabled={busy || !supervisorCode.trim()}>Add</Button>
+                </div>
+              </Field>
             )}
 
             {me && me.team_role !== "supervisor" && (
@@ -196,8 +239,8 @@ export default function TeamsPage() {
         </Card>
       )}
 
-      {!examiner && (
-        <Card title="Create a team" note="You become the team lead (or its supervisor, if you have a supervisor account).">
+      {student && (
+        <Card title="Create a team" note="You become the team lead and get a join code to share with your teammates.">
           <div className="flex flex-col gap-3">
             <Field label="Team name">
               <input className={inputClass} value={newTeam.name} onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })} />
@@ -219,6 +262,9 @@ export default function TeamsPage() {
           </ul>
         </Card>
       )}
+
+      {supervisor && <PastGroups />}
+      {supervisor && <SupervisorCode />}
     </div>
   )
 }

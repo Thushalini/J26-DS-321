@@ -6,13 +6,17 @@
                     so without this rule they would disappear once sign-in exists.
   Real team, examiner -> read-only and ANONYMISED: behaviour output by member code only;
                     no names, emails, git identities, repo link, plan notes or chat.
+  Real team, panel review -> a supervisor who entered the team's join code under "Panel review":
+                    read-only, one team at a time, until they open the next one or it expires.
 """
 import hashlib
 
 from fastapi import HTTPException
 
 from buddy.auth import STAFF_ROLES
-from buddy.store import one_as_dict, rows_as_dicts
+from buddy.store import now, one_as_dict, rows_as_dicts
+
+PANEL_ROLE = "panel"
 
 
 def membership(conn, team_id, user_id):
@@ -20,10 +24,22 @@ def membership(conn, team_id, user_id):
                                     (team_id, user_id)))
 
 
+def active_panel_team_id(conn, user):
+    if user["role"] != "supervisor":
+        return None
+    row = conn.execute("SELECT team_id FROM panel_reviews WHERE user_id = ? AND expires_at > ?",
+                       (user["user_id"], now())).fetchone()
+    return row[0] if row else None
+
+
 def visible_teams(conn, user):
     mine = rows_as_dicts(conn.execute(
-        "SELECT t.*, m.team_role AS my_role FROM teams t JOIN team_members m ON m.team_id = t.team_id "
-        "WHERE m.user_id = ? ORDER BY t.name", (user["user_id"],)))
+        "SELECT t.*, m.team_role AS my_role, m.supervision_status, m.archived_at FROM teams t "
+        "JOIN team_members m ON m.team_id = t.team_id WHERE m.user_id = ? ORDER BY t.name", (user["user_id"],)))
+    panel_id = active_panel_team_id(conn, user)
+    if panel_id and not any(t["team_id"] == panel_id for t in mine):
+        mine += rows_as_dicts(conn.execute(f"SELECT t.*, '{PANEL_ROLE}' AS my_role FROM teams t WHERE t.team_id = ?",
+                                           (panel_id,)))
     if user["role"] not in STAFF_ROLES:
         return mine
     research = rows_as_dicts(conn.execute(
@@ -45,6 +61,8 @@ def team_access(conn, user, team_id):
         return team, m["team_role"]
     if team["is_research"] and user["role"] in STAFF_ROLES:
         return team, "viewer"
+    if active_panel_team_id(conn, user) == team_id:
+        return team, PANEL_ROLE
     if user["role"] == "examiner":
         return team, "viewer"                     # real team: read-only and anonymised (see is_anonymised)
     raise HTTPException(403, "You are not a member of this team.")
