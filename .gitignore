@@ -16,6 +16,11 @@ __pycache__/
 .ipynb_checkpoints/
 backend/.env
 backend/component2/data/
+backend/component4/data/marks/
+backend/component4/data/*
+backend/component4/models/*
+backend/component4/results/*
+!backend/component4/*/.gitkeep
 *.db
 
 # --- Environment variables (keep .env.example committed) ---

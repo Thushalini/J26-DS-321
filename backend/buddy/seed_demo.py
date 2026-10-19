@@ -14,6 +14,7 @@ Run from backend:
 import argparse
 
 from buddy.auth import hash_password
+from buddy.codes import new_code
 from buddy.store import new_id, now, open_conn
 
 DEMO_ACCOUNTS = [("supervisor@demo.buddy", "Demo Supervisor", "supervisor"),
@@ -40,8 +41,10 @@ def main():
         if conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
             print(f"  {email:<24} already exists (password unchanged)")
             continue
-        conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)",
-                     (new_id("u"), email, name, role, hash_password(args.password), now()))
+        conn.execute("INSERT INTO users (user_id, email, name, role, password_hash, created_at, supervisor_code) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     (new_id("u"), email, name, role, hash_password(args.password), now(),
+                      new_code(conn) if role == "supervisor" else None))
         print(f"  {email:<24} created, password: {args.password}")
     conn.commit()
     conn.close()

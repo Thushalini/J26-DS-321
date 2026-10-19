@@ -1,4 +1,6 @@
 // Calls to the backend. Every request carries the signed-in user's token.
+import type { SupervisionStatus } from "@/lib/supervision"
+
 export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"
 
 const TOKEN_KEY = "buddy.token"
@@ -59,13 +61,14 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
 // ---- Shapes returned by /app ----
 
 export type UserRole = "student" | "supervisor" | "examiner"
-export type TeamRole = "lead" | "member" | "supervisor" | "viewer"
+export type TeamRole = "lead" | "member" | "supervisor" | "viewer" | "panel"
 
 export interface User {
   user_id: string
   email: string
   name: string
   role: UserRole
+  supervisor_code?: string
 }
 
 export interface Team {
@@ -83,6 +86,8 @@ export interface Team {
   activities?: number
   members?: number
   drift_severity?: string
+  supervision_status?: SupervisionStatus | null
+  archived?: boolean
 }
 
 export interface TeamMember {
@@ -121,6 +126,7 @@ export const ROLE_LABEL: Record<string, string> = {
   lead: "Team lead",
   member: "Member",
   viewer: "Viewer (read-only)",
+  panel: "Panel review (temporary)",
 }
 
 /** member code -> display name, for the people in a real team */

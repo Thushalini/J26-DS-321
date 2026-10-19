@@ -42,9 +42,15 @@ export function AppHeader() {
           onChange={(e) => (e.target.value === "__manage" ? router.push("/teams") : selectTeam(e.target.value))}
         >
           {!team && <option value="">No team yet</option>}
-          {teams.some((t) => !t.is_research) && (
+          {teams.some((t) => !t.is_research && t.my_role !== "panel" && !t.archived) && (
             <optgroup label={user?.role === "examiner" ? "Current teams (anonymised)" : "My teams"}>
-              {teams.filter((t) => !t.is_research).map((t) => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
+              {teams.filter((t) => !t.is_research && t.my_role !== "panel" && !t.archived)
+                .map((t) => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
+            </optgroup>
+          )}
+          {teams.some((t) => t.my_role === "panel") && (
+            <optgroup label="Panel review">
+              {teams.filter((t) => t.my_role === "panel").map((t) => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
             </optgroup>
           )}
           {teams.some((t) => t.is_research) && (

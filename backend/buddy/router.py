@@ -2,11 +2,16 @@
 (except register / login). Try them at http://127.0.0.1:8000/docs.
 
   POST /app/auth/register | /app/auth/login | /app/auth/logout     GET /app/auth/me
+  POST /app/auth/supervisor-code         supervisor: make a new personal code (teams already added stay)
   POST /app/auth/forgot | /app/auth/reset   email a reset code, then set a new password with it
   POST /app/auth/change-password           signed in: current password -> new password
   GET  /app/teams                        teams I can see (+ drift headline, for the supervisor overview)
-  POST /app/teams                        create a real team (creator = lead, or supervisor)
-  POST /app/teams/join                   join with a join code
+  POST /app/teams                        create a real team (students; the creator becomes the lead)
+  POST /app/teams/join                   join with a join code (students)
+  POST /app/teams/{id}/supervisors       add a supervisor with that supervisor's code (lead, member)
+  DELETE /app/teams/{id}/members/{uid}   remove a member (lead)
+  PUT  /app/teams/{id}/supervision       supervisor's own status dot / remove from my list (supervisor)
+  GET|POST|DELETE /app/panel-review      supervisor: look at one other team with its join code, temporarily
   GET  /app/teams/{id}                   team details, members, unlinked git authors
   PUT  /app/teams/{id}                   rename / change repo link (lead, supervisor)
   PUT  /app/teams/{id}/me                my git names / emails (to link my commits)
@@ -33,9 +38,9 @@ from component2.classify.keyword_baseline import classify
 from component2.config import BLUEPRINT_DIR
 from component2.db import save_activities, save_labels
 
-from buddy import sync
-from buddy.access import (anonymous_team_name, is_anonymised, require, require_live, team_access,
-                          visible_teams)
+from buddy import codes, sync
+from buddy.access import (PANEL_ROLE, anonymous_team_name, is_anonymised, membership, require, require_live,
+                          team_access, visible_teams)
 from buddy.auth import (ROLES, check_password, check_reset, current_token, current_user, end_other_sessions,
                         end_session, get_conn, hash_password, public_user, send_reset_code, staff_code_ok,
                         start_reset, start_session)
@@ -44,6 +49,8 @@ from buddy.store import TS_FORMAT, new_id, now, one_as_dict, rows_as_dicts
 router = APIRouter(prefix="/app", tags=["Buddy.ds app (accounts, teams, chat, feedback)"])
 
 RESEARCH_LABEL = "Research dataset (public repos, simulated chat)"
+SUPERVISION_STATUSES = ("attention", "fine", "good")
+PANEL_REVIEW_HOURS = 3
 
 
 # ---------- Accounts ----------
@@ -75,9 +82,13 @@ def register(body: Register, conn=Depends(get_conn)):
     if conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
         raise HTTPException(409, "An account with this email already exists. Please sign in.")
     user = {"user_id": new_id("u"), "email": email, "name": body.name.strip(), "role": body.role}
-    conn.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)",
-                 (user["user_id"], email, user["name"], body.role, hash_password(body.password), now()))
+    supervisor_code = codes.new_code(conn) if body.role == "supervisor" else None
+    conn.execute("INSERT INTO users (user_id, email, name, role, password_hash, created_at, supervisor_code) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                 (user["user_id"], email, user["name"], body.role, hash_password(body.password), now(), supervisor_code))
     conn.commit()
+    if supervisor_code:
+        user["supervisor_code"] = supervisor_code
     return {"token": start_session(conn, user["user_id"]), "user": user}
 
 
@@ -150,9 +161,30 @@ def logout(token=Depends(current_token), conn=Depends(get_conn)):
     return {"ok": True}
 
 
+def _supervisor_code(conn, user, renew=False):
+    """A supervisor's personal code; accounts made before codes existed get one the first time it's asked for."""
+    code = None if renew else user.get("supervisor_code")
+    if not code:
+        code = codes.new_code(conn)
+        conn.execute("UPDATE users SET supervisor_code = ? WHERE user_id = ?", (code, user["user_id"]))
+        conn.commit()
+    return code
+
+
 @router.get("/auth/me")
-def me(user=Depends(current_user)):
-    return public_user(user)
+def me(user=Depends(current_user), conn=Depends(get_conn)):
+    out = public_user(user)
+    if user["role"] == "supervisor":
+        out["supervisor_code"] = _supervisor_code(conn, user)
+    return out
+
+
+@router.post("/auth/supervisor-code")
+def regenerate_supervisor_code(user=Depends(current_user), conn=Depends(get_conn)):
+    if user["role"] != "supervisor":
+        raise HTTPException(403, "Only supervisors have a supervisor code.")
+    return {"supervisor_code": _supervisor_code(conn, user, renew=True),
+            "note": "Teams that already added you stay in your list."}
 
 
 # ---------- Teams ----------
@@ -163,6 +195,19 @@ class NewTeam(BaseModel):
 
 
 class JoinTeam(BaseModel):
+    join_code: str
+
+
+class AddSupervisor(BaseModel):
+    supervisor_code: str
+
+
+class Supervision(BaseModel):
+    status: str | None = None
+    archived: bool | None = None
+
+
+class PanelReview(BaseModel):
     join_code: str
 
 
@@ -199,11 +244,15 @@ def _team_out(conn, t, my_role):
         out.update(name=anonymous_team_name(t["team_id"]), repo_url=None, sync_message=None)
     if my_role in ("lead", "member", "supervisor"):
         out["join_code"] = t["join_code"]
+    if my_role == "supervisor":
+        out["supervision_status"] = t.get("supervision_status")
+        out["archived"] = bool(t.get("archived_at"))
     return out
 
 
-def _join_code():
-    return "-".join(secrets.token_hex(2).upper() for _ in range(2))      # e.g. 3F9A-C21B
+def _live_team_by_code(conn, join_code):
+    return one_as_dict(conn.execute("SELECT * FROM teams WHERE REPLACE(join_code, '-', '') = ? AND is_research = 0",
+                                    (codes.normalise(join_code),)))
 
 
 @router.get("/teams")
@@ -225,15 +274,14 @@ def list_teams(user=Depends(current_user), conn=Depends(get_conn)):
 
 @router.post("/teams")
 def create_team(body: NewTeam, user=Depends(current_user), conn=Depends(get_conn)):
-    if user["role"] == "examiner":
-        raise HTTPException(403, "Examiner accounts are read-only.")
+    if user["role"] != "student":
+        raise HTTPException(403, "Teams are created by students. Supervisors are added by a team with their supervisor code.")
     team_id = f"live__{secrets.token_hex(4)}"
     conn.execute("INSERT INTO teams (team_id, name, repo_url, is_research, join_code, created_by, created_at, "
                  "sync_status) VALUES (?, ?, ?, 0, ?, ?, ?, 'idle')",
-                 (team_id, body.name.strip(), _clean_repo(body.repo_url), _join_code(), user["user_id"], now()))
+                 (team_id, body.name.strip(), _clean_repo(body.repo_url), codes.new_code(conn), user["user_id"], now()))
     _add_member(conn, team_id, user)
-    return _team_out(conn, one_as_dict(conn.execute("SELECT * FROM teams WHERE team_id = ?", (team_id,))),
-                     "supervisor" if user["role"] == "supervisor" else "lead")
+    return _team_out(conn, one_as_dict(conn.execute("SELECT * FROM teams WHERE team_id = ?", (team_id,))), "lead")
 
 
 def _add_member(conn, team_id, user, role=None):
@@ -241,17 +289,18 @@ def _add_member(conn, team_id, user, role=None):
         role, code = "supervisor", None              # supervisors watch; their activity is not analysed
     else:
         role, code = role or "lead", sync.member_code(team_id, user["user_id"])
-    conn.execute("INSERT INTO team_members VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (team_id, user_id) DO NOTHING",
+    conn.execute("INSERT INTO team_members (team_id, user_id, team_role, member_code, git_identities, joined_at) "
+                 "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (team_id, user_id) DO NOTHING",
                  (team_id, user["user_id"], role, code, "[]", now()))
     conn.commit()
 
 
 @router.post("/teams/join")
 def join_team(body: JoinTeam, user=Depends(current_user), conn=Depends(get_conn)):
-    if user["role"] == "examiner":
-        raise HTTPException(403, "Examiner accounts are read-only.")
-    t = one_as_dict(conn.execute("SELECT * FROM teams WHERE join_code = ? AND is_research = 0",
-                                 (body.join_code.strip().upper(),)))
+    if user["role"] != "student":
+        raise HTTPException(403, "Supervisors don't join with a team code: the team adds you with your supervisor "
+                                 "code. To look at another team once, use Panel review.")
+    t = _live_team_by_code(conn, body.join_code)
     if not t:
         raise HTTPException(404, "No team has this join code.")
     _add_member(conn, t["team_id"], user, role="member")
@@ -291,6 +340,104 @@ def edit_team(team_id: str, body: EditTeam, user=Depends(current_user), conn=Dep
         conn.execute("UPDATE teams SET repo_url = ? WHERE team_id = ?", (_clean_repo(body.repo_url), team_id))
     conn.commit()
     return team_detail(team_id, user, conn)
+
+
+@router.post("/teams/{team_id}/supervisors")
+def add_supervisor(team_id: str, body: AddSupervisor, user=Depends(current_user), conn=Depends(get_conn)):
+    t, my_role = team_access(conn, user, team_id)
+    require_live(t, "add a supervisor")
+    require(my_role, ("lead", "member"), "add a supervisor")
+    supervisor = one_as_dict(conn.execute(
+        "SELECT * FROM users WHERE REPLACE(supervisor_code, '-', '') = ? AND role = 'supervisor'",
+        (codes.normalise(body.supervisor_code),)))
+    if not supervisor:
+        raise HTTPException(404, "No supervisor has this code. Check it with your supervisor.")
+    if membership(conn, team_id, supervisor["user_id"]):
+        conn.execute("UPDATE team_members SET archived_at = NULL WHERE team_id = ? AND user_id = ?",
+                     (team_id, supervisor["user_id"]))
+        conn.commit()
+    else:
+        _add_member(conn, team_id, supervisor)
+    return team_detail(team_id, user, conn)
+
+
+@router.delete("/teams/{team_id}/members/{member_user_id}")
+def remove_member(team_id: str, member_user_id: str, user=Depends(current_user), conn=Depends(get_conn)):
+    t, my_role = team_access(conn, user, team_id)
+    require_live(t, "remove members")
+    require(my_role, ("lead",), "remove members")
+    target = membership(conn, team_id, member_user_id)
+    if not target or target["team_role"] != "member":
+        raise HTTPException(400, "Only team members can be removed (not the lead or a supervisor).")
+    conn.execute("DELETE FROM team_members WHERE team_id = ? AND user_id = ?", (team_id, member_user_id))
+    conn.commit()
+    return team_detail(team_id, user, conn)
+
+
+@router.put("/teams/{team_id}/supervision")
+def set_supervision(team_id: str, body: Supervision, user=Depends(current_user), conn=Depends(get_conn)):
+    t, my_role = team_access(conn, user, team_id)
+    require(my_role, ("supervisor",), "change the supervision status")
+    if "status" in body.model_fields_set:
+        if body.status is not None and body.status not in SUPERVISION_STATUSES:
+            raise HTTPException(400, f"Status must be one of {', '.join(SUPERVISION_STATUSES)}, or empty.")
+        conn.execute("UPDATE team_members SET supervision_status = ? WHERE team_id = ? AND user_id = ?",
+                     (body.status, team_id, user["user_id"]))
+    if body.archived is not None:
+        conn.execute("UPDATE team_members SET archived_at = ? WHERE team_id = ? AND user_id = ?",
+                     (now() if body.archived else None, team_id, user["user_id"]))
+    conn.commit()
+    row = one_as_dict(conn.execute("SELECT supervision_status, archived_at FROM team_members "
+                                   "WHERE team_id = ? AND user_id = ?", (team_id, user["user_id"])))
+    return {"team_id": team_id, "supervision_status": row["supervision_status"], "archived": bool(row["archived_at"])}
+
+
+# ---------- Panel review (a supervisor looks at another team, one at a time) ----------
+
+def _panel_out(conn, user):
+    row = one_as_dict(conn.execute("SELECT * FROM panel_reviews WHERE user_id = ? AND expires_at > ?",
+                                   (user["user_id"], now())))
+    if not row:
+        return None
+    t = one_as_dict(conn.execute("SELECT * FROM teams WHERE team_id = ?", (row["team_id"],)))
+    out = _team_out(conn, t, PANEL_ROLE)
+    out["expires_at"] = row["expires_at"]
+    return out
+
+
+def _require_supervisor(user):
+    if user["role"] != "supervisor":
+        raise HTTPException(403, "Panel review is for supervisors.")
+
+
+@router.get("/panel-review")
+def get_panel_review(user=Depends(current_user), conn=Depends(get_conn)):
+    _require_supervisor(user)
+    return _panel_out(conn, user)
+
+
+@router.post("/panel-review")
+def start_panel_review(body: PanelReview, user=Depends(current_user), conn=Depends(get_conn)):
+    _require_supervisor(user)
+    t = _live_team_by_code(conn, body.join_code)
+    if not t:
+        raise HTTPException(404, "No team has this join code.")
+    if membership(conn, t["team_id"], user["user_id"]):
+        raise HTTPException(400, "You already supervise this team - open it from your list.")
+    conn.execute("INSERT INTO panel_reviews (user_id, team_id, started_at, expires_at) VALUES (?, ?, ?, ?) "
+                 "ON CONFLICT (user_id) DO UPDATE SET team_id = excluded.team_id, started_at = excluded.started_at, "
+                 "expires_at = excluded.expires_at",
+                 (user["user_id"], t["team_id"], now(), now(timedelta(hours=PANEL_REVIEW_HOURS))))
+    conn.commit()
+    return _panel_out(conn, user)
+
+
+@router.delete("/panel-review")
+def end_panel_review(user=Depends(current_user), conn=Depends(get_conn)):
+    _require_supervisor(user)
+    conn.execute("DELETE FROM panel_reviews WHERE user_id = ?", (user["user_id"],))
+    conn.commit()
+    return {"ok": True}
 
 
 @router.put("/teams/{team_id}/me")

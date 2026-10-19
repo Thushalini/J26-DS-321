@@ -5,6 +5,7 @@ text, so no SERIAL / AUTOINCREMENT differences between the two.
 """
 import secrets
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from component2.db import connect
 
@@ -102,11 +103,34 @@ def new_id(prefix):
     return f"{prefix}_{secrets.token_hex(8)}"
 
 
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+
 def ensure_tables(conn):
     for statement in APP_SCHEMA.split(";"):
         if statement.strip():
             conn.execute(statement)
     conn.commit()
+    apply_migrations(conn)
+
+
+def _statements(sql):
+    code = "\n".join(line for line in sql.splitlines() if not line.strip().startswith("--"))
+    return [part.strip() for part in code.split(";") if part.strip()]
+
+
+def apply_migrations(conn):
+    """Runs every migrations/NNNN_name.sql not yet recorded in schema_migrations, in order, once each."""
+    conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (migration_id TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+    conn.commit()
+    done = {m for (m,) in conn.execute("SELECT migration_id FROM schema_migrations").fetchall()}
+    for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        if path.stem in done:
+            continue
+        for statement in _statements(path.read_text(encoding="utf-8")):
+            conn.execute(statement)
+        conn.execute("INSERT INTO schema_migrations VALUES (?, ?)", (path.stem, now()))
+        conn.commit()
 
 
 _ready = False

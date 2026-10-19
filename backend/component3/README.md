@@ -26,6 +26,9 @@ component3/
     root_cause_model.py      calibrated Gradient Boosting (5 causes)
   stage3_severity/         Stage 3
     severity.py              severity score, level, advice templates
+  collector/               reads real data to feed predict_live.py
+    git_collector.py         commits per day, commit gap, notebook edits from a Git repo
+    assemble.py              joins tracker epochs + Git + drift score into one run
   evaluation/              proving the ML beats simple rules
     baseline.py              rule-based baselines A and B
     ablation.py              baseline vs ML comparison + feature ablations
@@ -70,6 +73,19 @@ From Python: `from backend.component3.predict_live import predict_run`.
 **Output (JSON):** anomaly score, a probability for each cause, severity score and level, a short `title` and one-line `evidence` (for an alert card), recommended cause and advice. The field names are a first draft (`schema_version` 0.1-draft) and can be renamed to match Component 4 and the frontend.
 A call takes well under 1 second (requirement: under 5 seconds), and the live path reproduces the batch results (same severity level for all 210 test runs).
 
+## Collect data from Git
+
+`collector/git_collector.py` reads a repository's history and gives the commit-related inputs for a time window (normally the start and end of one run):
+
+```
+python -m backend.component3.collector.git_collector --repo . --since 2026-10-01 --until 2026-10-14 --utc-offset 5.5
+```
+
+It returns commits per day, the days since the last commit, and notebook edits per day. It uses the `git` command, so no extra Python package is needed. Merge commits are skipped, and days are counted in UTC unless `--utc-offset` is given.
+`collector/assemble.py` then joins these with the epochs from an experiment tracker (each epoch needs a `timestamp`) and the drift score from Component 2 into the run that `predict_run()` scores.
+
+Limit: Git records commits, not every save of a notebook, so "notebook edits per day" is a lower estimate than the training data used.
+
 ## Results (test split, 210 runs)
 
 | Check | Result | Target |
@@ -89,7 +105,7 @@ A call takes well under 1 second (requirement: under 5 seconds), and the live pa
 - The KS test uses only 6 real values from a different task, so it is a basic realism check.
 - Removing the anomaly score or the drift score from the Stage 2 inputs did not change its results on this data.
 - `drift_severity_score` (from Component 2) is a simulated feature that separates classes very easily.
-- `predict_live.py` scores a run that is handed to it; automatic collection of the signals from MLflow / W&B / Git (FR1) is not built yet.
+- `predict_live.py` scores a run that is handed to it; the Git part of the collector (FR1) is built; reading MLflow and W&B is still to be done.
 
 ## Status
 
