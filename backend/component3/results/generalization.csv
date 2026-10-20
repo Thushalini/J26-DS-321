@@ -1,0 +1,7 @@
+held_out,system,runs,healthy,healthy_flagged,failures,failures_flagged,cause_right_when_flagged,false_alarm_rate,failures_caught_rate
+random_real,Trained pipeline,150,60,2,90,67,67,0.033,0.744
+random_real,Best single rule per cause (B),150,60,21,90,81,76,0.35,0.9
+unseen_tasks,Trained pipeline,374,170,19,204,161,160,0.112,0.789
+unseen_tasks,Best single rule per cause (B),374,170,82,204,183,162,0.482,0.897
+unseen_model,Trained pipeline,274,109,16,165,119,112,0.147,0.721
+unseen_model,Best single rule per cause (B),274,109,40,165,138,109,0.367,0.836
