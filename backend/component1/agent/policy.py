@@ -1,0 +1,145 @@
+"""Buddy's speaking rules: when the assistant stays silent and when it speaks.
+
+Pure Python. No database, no model, no web code, so it is easy to test.
+Times are plain seconds, passed in by the caller.
+
+How it is used:
+    buddy = Buddy()
+    buddy.heard_message(now)               # call whenever a person sends a message
+    replies = buddy.step(signals, now)     # call after the pipeline runs, and also on a timer
+
+step() returns an empty list, or exactly ONE message. A message can hold a short
+"Noted: ..." line followed by one question or warning, so Buddy never sends two
+messages in a row for the same event.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+from .signals import CHECK, CONFLICT, FINALIZED, FOUND, GAP, SAVED, Signal
+
+
+@dataclass(frozen=True)
+class BuddyConfig:
+    # Starting values. Tune them by testing with real people.
+    min_seconds_between_questions: float = 120.0
+    quiet_seconds_before_gap_question: float = 90.0
+    repeat_after_seconds: float = 1800.0
+
+
+def field_label(field: str) -> str:
+    return field.replace("_", " ")
+
+
+def saved_line(signals: list[Signal]) -> str:
+    items = []
+    for s in signals:
+        value = s.values[0] if s.values else ""
+        notes = []
+        if s.source:
+            notes.append(f"from {s.source}")
+        if s.detail:
+            notes.append(s.detail)
+        suffix = f" ({', '.join(notes)})" if notes else ""
+        items.append(f"{field_label(s.field)} = {value}{suffix}")
+    return "Noted: " + "; ".join(items) + "."
+
+
+def conflict_text(signal: Signal) -> str:
+    label = field_label(signal.field)
+    values = list(signal.values)
+    if len(values) < 2:
+        return f"I saw conflicting information about the {label}. Which value should we go with?"
+    if len(values) == 2:
+        joined = f"{values[0]} and {values[1]}"
+    else:
+        joined = ", ".join(values[:-1]) + f" and {values[-1]}"
+    return f"I saw different answers for the {label}: {joined}. Which one should we go with?"
+
+
+def check_text(signal: Signal) -> str:
+    source = f" (source: {signal.source})" if signal.source else ""
+    return f"Possible problem with the {field_label(signal.field)}: {signal.detail}{source} Is that intended?"
+
+
+def found_text(signal: Signal) -> str:
+    value = signal.values[0] if signal.values else ""
+    where = signal.source or "the uploaded documents"
+    return f"I found a possible {field_label(signal.field)} in {where}: {value}. Should we use that?"
+
+
+def gap_text(signal: Signal) -> str:
+    return f"I noticed there is no decision yet on the {field_label(signal.field)}. Could someone confirm what it will be?"
+
+
+class Buddy:
+    def __init__(self, config: BuddyConfig = BuddyConfig()):
+        self.config = config
+        self._said: dict[tuple, float] = {}
+        self._last_question_at: Optional[float] = None
+        self._last_human_message_at: Optional[float] = None
+
+    def heard_message(self, now: float) -> None:
+        self._last_human_message_at = now
+
+    def step(self, signals: list[Signal], now: float) -> list[str]:
+        """Return what Buddy says now: an empty list, or exactly one message."""
+        saved = self._unsaid([s for s in signals if s.kind == SAVED], now)
+        question = self._pick_question(signals, now)
+
+        parts = []
+        if saved:
+            for s in saved:
+                self._said[s.key] = now
+            parts.append(saved_line(saved))
+        if question is not None:
+            signal, text = question
+            self._said[signal.key] = now
+            self._last_question_at = now
+            parts.append(text)
+        return ["\n".join(parts)] if parts else []
+
+    # ------------------------------------------------------------ helpers
+    def _pick_question(self, signals: list[Signal], now: float):
+        """At most one question or warning, most urgent first."""
+        for kind, make_text in ((CONFLICT, conflict_text), (CHECK, check_text)):
+            s = self._first_unsaid([x for x in signals if x.kind == kind], now)
+            if s is not None:
+                return s, make_text(s)
+
+        if not (self._calm_enough(signals, now) and self._rate_ok(now)):
+            return None
+
+        found = self._first_unsaid([x for x in signals if x.kind == FOUND], now)
+        if found is not None:
+            return found, found_text(found)
+
+        found_fields = {x.field for x in signals if x.kind == FOUND}
+        gaps = [x for x in signals if x.kind == GAP and x.field not in found_fields]
+        gap = self._first_unsaid(gaps, now)
+        if gap is not None:
+            return gap, gap_text(gap)
+        return None
+
+    def _is_new(self, signal: Signal, now: float) -> bool:
+        last = self._said.get(signal.key)
+        return last is None or now - last >= self.config.repeat_after_seconds
+
+    def _first_unsaid(self, signals: list[Signal], now: float) -> Optional[Signal]:
+        return next((s for s in signals if self._is_new(s, now)), None)
+
+    def _unsaid(self, signals: list[Signal], now: float) -> list[Signal]:
+        return [s for s in signals if self._is_new(s, now)]
+
+    def _rate_ok(self, now: float) -> bool:
+        return (
+            self._last_question_at is None
+            or now - self._last_question_at >= self.config.min_seconds_between_questions
+        )
+
+    def _calm_enough(self, signals: list[Signal], now: float) -> bool:
+        if any(s.kind == FINALIZED for s in signals):
+            return True
+        last = self._last_human_message_at
+        return last is None or now - last >= self.config.quiet_seconds_before_gap_question
