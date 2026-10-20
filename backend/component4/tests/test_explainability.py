@@ -12,7 +12,7 @@ from component4.synthetic.feature_spec import feature_names
 @pytest.fixture(scope="module")
 def explained():
     frame = generator.generate(500)
-    _, model = train_and_evaluate(frame)
+    _, model = train_and_evaluate(frame, search=False)
     parts = split(frame)
     rows = parts["test"][0].iloc[:5]
     return model, rows, shap_values(model, parts["train"][0].iloc[:20], rows)
