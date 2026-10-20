@@ -24,8 +24,8 @@ app.add_middleware(
 app.include_router(c2_router)
 app.include_router(app_router)      # sign-in, teams, chat, blueprint, feedback (Buddy.ds app)
 # Other components add theirs here, e.g.:
-# from component3.api.router import router as c3_router
-# app.include_router(c3_router)
+from component3.api.router import router as c3_router
+app.include_router(c3_router)
 
 
 @app.get("/")
