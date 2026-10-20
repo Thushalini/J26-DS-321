@@ -9,10 +9,15 @@ from . import baseline
 
 
 def _summary(name, y_true, y_pred, is_anomaly, det_score):
+    present = [i for i in range(y_true.shape[1]) if y_true[:, i].sum() > 0]     # causes that occur in this test set
+    flagged = np.asarray(y_pred).sum(axis=1) > 0                                # the system names at least one cause
+    healthy = np.asarray(y_true).sum(axis=1) == 0
     return {"system": name,
-            "macro_F1": f1_score(y_true, y_pred, average="macro", zero_division=0),
+            "macro_F1": f1_score(y_true[:, present], y_pred[:, present], average="macro", zero_division=0),
             "hamming_loss": hamming_loss(y_true, y_pred),
-            "detection_AUC": roc_auc_score(is_anomaly, det_score)}
+            "detection_AUC": roc_auc_score(is_anomaly, det_score),
+            "healthy_flagged": float(flagged[healthy].mean()) if healthy.any() else float("nan"),
+            "failures_flagged": float(flagged[~healthy].mean()) if (~healthy).any() else float("nan")}
 
 
 def run_ablation(data, rule_a, rc_bundle):
