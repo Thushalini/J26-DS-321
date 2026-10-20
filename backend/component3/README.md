@@ -26,6 +26,7 @@ component3/
     root_cause_model.py      calibrated Gradient Boosting (5 causes)
   stage3_severity/         Stage 3
     severity.py              severity score, level, advice templates
+  api/                     web API and database storage for the Alerts page
   collector/               reads real data to feed predict_live.py
     git_collector.py         commits per day, commit gap, notebook edits from a Git repo
     assemble.py              joins tracker epochs + Git + drift score into one run
@@ -85,6 +86,25 @@ It returns commits per day, the days since the last commit, and notebook edits p
 `collector/assemble.py` then joins these with the epochs from an experiment tracker (each epoch needs a `timestamp`) and the drift score from Component 2 into the run that `predict_run()` scores.
 
 Limit: Git records commits, not every save of a notebook, so "notebook edits per day" is a lower estimate than the training data used.
+
+## Alerts API (for the web app)
+
+The website's Alerts page loads each team's alerts from the backend (`backend/component3/api/`). Add to `backend/main.py`:
+
+```
+from component3.api.router import router as c3_router
+app.include_router(c3_router)
+```
+
+| Address | Who may use it | What it does |
+|---|---|---|
+| `GET /c3/teams/{team_id}/alerts` | any signed-in user who can see the team | the team's alerts: open, resolved and healthy runs |
+| `POST /c3/teams/{team_id}/alerts/{run_id}/resolve` | the team's lead or members (not research teams) | mark an alert resolved, or reopen it |
+| `POST /c3/teams/{team_id}/runs` | collectors and scripts with the `X-C3-Key` header (= `C3_API_KEY` in `backend/.env`) | score a run and save its alert |
+
+The routes use the same login and access checks as the Buddy.ds routes (`team_access`, `require`, `require_live`).
+
+Alerts are stored in the table `component3_alerts` (one row per team and run), using the same plain column types and the same database wrapper as Component 2, so it works on PostgreSQL and on the local SQLite file. To fill a team with sample alerts for a demo, run from the `backend` folder: `python -m component3.api.seed_alerts --find <team name>` and then `python -m component3.api.seed_alerts --team <team_id>`.
 
 ## Results (test split, 210 runs)
 
