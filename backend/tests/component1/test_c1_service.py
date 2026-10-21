@@ -97,10 +97,17 @@ def test_a_failing_language_model_never_raises_and_the_next_message_still_works(
     assert len(svc.handle_chat_message("t1", "m2", "M-1", TOURIST, T0)) == 1   # recovered
 
 
-def test_a_service_that_is_not_set_up_returns_nothing_instead_of_raising():
+def test_a_service_that_is_not_set_up_returns_nothing_instead_of_raising(tmp_path):
+    svc = AgentService(bundle=None, llm=None, env_file=None, model_path=tmp_path / "missing.joblib")
+    assert svc.handle_chat_message("t1", "m1", "M-1", TOURIST, T0) == []
+
+
+def test_without_a_gemini_key_the_rules_still_extract():
     svc = AgentService(bundle=BUNDLE, llm=None, env_file=None)
-    with env(GEMINI_API_KEY=None, GEMINI_MODEL=None):
-        assert svc.handle_chat_message("t1", "m1", "M-1", TOURIST, T0) == []
+    with env(GEMINI_API_KEY=None, GEMINI_MODEL=None, GROQ_API_KEY=None, GROQ_MODEL=None,
+             C1_LLM_PROVIDER=None, C1_EXTRACTOR_MODE=None):
+        replies = svc.handle_chat_message("t1", "m1", "M-1", "Let's use XGBoost for this.", T0)
+    assert len(replies) == 1 and "algorithm = XGBoost" in replies[0]
 
 
 def test_the_speaker_falls_back_from_member_code_to_user_id_to_unknown():

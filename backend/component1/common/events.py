@@ -104,6 +104,15 @@ class EventStore:
         self._events: list[Event] = []
         self._state = Blueprint(project_id=project_id)
 
+    @classmethod
+    def from_events(cls, project_id: str, events: list[Event]) -> "EventStore":
+        """Rebuild a store from events that were saved earlier (for example after a restart)."""
+        store = cls(project_id)
+        ordered = sorted(events, key=lambda e: e.version)
+        store._state = replay(project_id, ordered)
+        store._events = ordered
+        return store
+
     # -- read access (copies, so callers cannot change history by accident)
     @property
     def state(self) -> Blueprint:

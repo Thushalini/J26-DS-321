@@ -134,3 +134,67 @@ def test_the_function_plugs_into_the_extractor():
     llm = make_gemini_llm(model="m", client=FakeClient(reply))
     items = extract_items("I think we should predict tourist arrivals.", llm)
     assert len(items) == 1 and items[0].value == "tourist arrivals"
+
+# ------------------------------------------------- time limit and thinking
+def test_no_thinking_setting_is_sent_by_default():
+    client = FakeClient()
+    with env(GEMINI_THINKING_BUDGET=None):
+        make_gemini_llm(model="m", client=client)("x")
+    assert "thinking_config" not in client.models.calls[0]["config"]
+
+
+def test_thinking_budget_can_be_turned_off():
+    client = FakeClient()
+    make_gemini_llm(model="m", client=client, thinking_budget=0)("x")
+    assert client.models.calls[0]["config"]["thinking_config"] == {"thinking_budget": 0}
+
+
+def test_thinking_budget_can_come_from_the_environment():
+    client = FakeClient()
+    with env(GEMINI_THINKING_BUDGET="0"):
+        make_gemini_llm(model="m", client=client)("x")
+    assert client.models.calls[0]["config"]["thinking_config"] == {"thinking_budget": 0}
+
+
+def test_an_empty_thinking_budget_in_the_environment_means_the_default():
+    client = FakeClient()
+    with env(GEMINI_THINKING_BUDGET=""):
+        make_gemini_llm(model="m", client=client)("x")
+    assert "thinking_config" not in client.models.calls[0]["config"]
+
+
+def test_a_bad_number_in_the_environment_gives_a_clear_error():
+    for name, bad in (("GEMINI_THINKING_BUDGET", "lots"), ("GEMINI_TIMEOUT_SECONDS", "soon")):
+        with env(**{name: bad}):
+            try:
+                make_gemini_llm(model="m", client=FakeClient())
+            except GeminiConfigError as exc:
+                assert name in str(exc)
+                continue
+        raise AssertionError(f"expected GeminiConfigError for {name}")
+
+
+def test_a_timeout_of_zero_or_less_is_refused():
+    try:
+        make_gemini_llm(model="m", client=FakeClient(), timeout_seconds=0)
+    except GeminiConfigError:
+        return
+    raise AssertionError("expected GeminiConfigError")
+
+
+def test_http_options_set_the_time_limit_in_milliseconds_and_one_retry():
+    from component1.extraction.gemini_provider import MAX_ATTEMPTS, http_options
+
+    opts = http_options(30)
+    assert opts["timeout"] == 30_000
+    assert opts["retry_options"]["attempts"] == MAX_ATTEMPTS == 2
+
+
+def test_the_real_client_accepts_the_http_options():
+    """Builds (does not call) a real client, so the option names match the installed library."""
+    import pytest
+
+    genai = pytest.importorskip("google.genai")
+    from component1.extraction.gemini_provider import http_options
+
+    genai.Client(api_key="test-key-not-real", http_options=http_options(30))

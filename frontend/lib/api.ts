@@ -141,3 +141,104 @@ export function shortDate(ts: string | null | undefined) {
   const d = new Date(ts)
   return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
 }
+// ---- Component 1: the living blueprint (nine planning fields) ----
+
+export type PlanStatus = "missing" | "uncertain" | "known" | "confirmed" | "conflicting" | string
+
+export interface PlanEvidence {
+  speaker: string
+  text: string
+  source_id: string
+  source_type: string
+  time: string | null
+}
+
+/** A value found in an uploaded document, waiting for the team to accept or dismiss it. */
+export interface PlanSuggestion {
+  fact_id: string
+  field: string
+  value: string
+  mentions: number
+  documents: number
+  source: string            // e.g. "Proposal.pdf p.4"
+  doc_id: string
+  filename: string
+  page: number | null
+  text?: string             // the exact words; only for the team lead and members
+}
+
+export interface PlanDocument {
+  doc_id: string
+  filename: string
+  status: "processing" | "done" | "failed" | string
+  error: string | null
+  pages: number | null
+  facts: number | null
+  uploaded_at: string
+  processed_at: string | null
+}
+
+export interface PlanField {
+  name: string
+  label: string
+  status: PlanStatus
+  value: string | null
+  confidence_band: "High" | "Medium" | "Low" | null
+  mentions: number
+  candidates?: string[]
+  evidence?: PlanEvidence[]
+  suggestions?: PlanSuggestion[]
+}
+
+export interface PlanData {
+  available: true
+  can_see_sources: boolean
+  can_edit?: boolean
+  documents?: PlanDocument[] | null
+  team_id: string
+  version: number
+  updated_at: string | null
+  readiness: {
+    complete: boolean
+    confirmed: number
+    total: number
+    missing: string[]
+    conflicting: string[]
+    not_confirmed: string[]
+    low_confidence: string[]
+  }
+  next_gaps: string[]
+  fields: PlanField[]
+  note: string
+}
+
+export type PlanResponse = PlanData | { available: false; reason: string }
+
+export function getPlan(teamId: string) {
+  return api<PlanResponse>(`/app/teams/${encodeURIComponent(teamId)}/plan`)
+}
+
+/** Upload a project document (PDF, Word, text or Markdown). It is read in the background. */
+export function uploadPlanDocument(teamId: string, file: File) {
+  const form = new FormData()
+  form.append("file", file)
+  // No Content-Type here: the browser sets the multipart boundary itself.
+  return api<{ document: PlanDocument }>(`/app/teams/${encodeURIComponent(teamId)}/documents`, {
+    method: "POST",
+    body: form,
+  })
+}
+
+export function removePlanDocument(teamId: string, docId: string) {
+  return api<{ ok: boolean }>(
+    `/app/teams/${encodeURIComponent(teamId)}/documents/${encodeURIComponent(docId)}`,
+    { method: "DELETE" },
+  )
+}
+
+export function decideSuggestion(teamId: string, factId: string, action: "accept" | "dismiss") {
+  return api<{ ok: boolean; field: string; value: string; plan: Omit<PlanData, "available" | "can_see_sources"> }>(
+    `/app/teams/${encodeURIComponent(teamId)}/plan/candidates/${encodeURIComponent(factId)}/${action}`,
+    { method: "POST" },
+  )
+}
