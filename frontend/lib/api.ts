@@ -141,7 +141,7 @@ export function shortDate(ts: string | null | undefined) {
   const d = new Date(ts)
   return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
 }
-// ---- Component 1: the living blueprint (nine planning fields) ----
+// ---- Component 1: the living blueprint (ten planning fields) ----
 
 export type PlanStatus = "missing" | "uncertain" | "known" | "confirmed" | "conflicting" | string
 
@@ -178,6 +178,27 @@ export interface PlanDocument {
   processed_at: string | null
 }
 
+/** One change in a field's history, built from the blueprint's event log. */
+export interface PlanHistoryEntry {
+  version: number
+  time: string
+  field: string
+  label: string
+  kind: "proposed" | "changed" | "agreed" | "repeated" | "accepted_document" | "status_changed" | string
+  value: string | null
+  previous_value: string | null
+  status_before: PlanStatus
+  status_after: PlanStatus
+  confidence_band: "High" | "Medium" | "Low" | null
+  by: string | null
+  accepted_by: string | null
+  source: { type: string | null; id: string | null; page: number | null } | null
+  source_label: string | null
+  document: string | null
+  summary: string
+  text?: string             // the exact words; only for the team lead and members
+}
+
 export interface PlanField {
   name: string
   label: string
@@ -188,6 +209,28 @@ export interface PlanField {
   candidates?: string[]
   evidence?: PlanEvidence[]
   suggestions?: PlanSuggestion[]
+  timeline?: PlanTimeline | null     // only on the "timeline" field
+}
+
+/** The timeline field's value worked out into dates. */
+export interface PlanTimeline {
+  kind: "duration" | "deadline" | "week" | "text"
+  text: string
+  deadline: string | null            // ISO date
+  duration_days: number | null
+  days_left: number | null
+  week: number | null
+}
+
+export interface PlanMilestone {
+  decision_id: string
+  name: string
+  when: string | null
+  date: string | null                // ISO date, when it can be worked out
+  week: number | null
+  proposed_by: string
+  status: string
+  said_at: string
 }
 
 export interface PlanData {
@@ -195,6 +238,8 @@ export interface PlanData {
   can_see_sources: boolean
   can_edit?: boolean
   documents?: PlanDocument[] | null
+  recent_changes?: PlanHistoryEntry[]
+  milestones?: PlanMilestone[]
   team_id: string
   version: number
   updated_at: string | null
@@ -216,6 +261,14 @@ export type PlanResponse = PlanData | { available: false; reason: string }
 
 export function getPlan(teamId: string) {
   return api<PlanResponse>(`/app/teams/${encodeURIComponent(teamId)}/plan`)
+}
+
+/** Every change of one field (or of all fields), newest first. */
+export function getPlanHistory(teamId: string, field?: string) {
+  const query = field ? `?field=${encodeURIComponent(field)}` : ""
+  return api<{ available: boolean; field: string | null; total: number; entries: PlanHistoryEntry[] }>(
+    `/app/teams/${encodeURIComponent(teamId)}/plan/history${query}`,
+  )
 }
 
 /** Upload a project document (PDF, Word, text or Markdown). It is read in the background. */

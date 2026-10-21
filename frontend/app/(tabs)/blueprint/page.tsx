@@ -1,5 +1,5 @@
 "use client"
-// Blueprint tab. Top: the nine-field planning blueprint built by Component 1 (Buddy) from the chat.
+// Blueprint tab. Top: the ten-field planning blueprint built by Component 1 (Buddy) from the chat.
 // Below: the three-value plan that Component 2 measures drift against. It is read-only:
 // Buddy fills it in once a value is known or confirmed.
 import { useEffect, useState } from "react"

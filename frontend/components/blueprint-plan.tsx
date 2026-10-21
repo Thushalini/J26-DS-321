@@ -1,5 +1,5 @@
 "use client"
-// The nine-field planning blueprint built by Component 1 (Buddy) from the team chat and from
+// The ten-field planning blueprint built by Component 1 (Buddy) from the team chat and from
 // uploaded project documents. Values found in documents are suggestions until the team accepts them.
 import { useCallback, useEffect, useRef, useState } from "react"
 
@@ -7,14 +7,61 @@ import { Button, Card, Notice } from "@/components/ui"
 import {
   decideSuggestion,
   getPlan,
+  getPlanHistory,
   removePlanDocument,
   shortDate,
   uploadPlanDocument,
   type PlanData,
   type PlanDocument,
   type PlanField,
+  type PlanHistoryEntry,
+  type PlanMilestone,
   type PlanSuggestion,
+  type PlanTimeline,
 } from "@/lib/api"
+
+function dayText(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })
+}
+
+function daysLeftText(n: number) {
+  if (n === 0) return "today"
+  if (n < 0) return `${-n} ${n === -1 ? "day" : "days"} ago`
+  return `${n} ${n === 1 ? "day" : "days"} left`
+}
+
+function TimelineDetails({ t, milestones }: { t: PlanTimeline | null | undefined; milestones: PlanMilestone[] }) {
+  if (!t && milestones.length === 0) return null
+  return (
+    <div className="mt-1 flex flex-col gap-1 text-xs text-muted">
+      {t?.deadline && (
+        <p>
+          {t.kind === "duration" ? "Ends about " : "Deadline "}
+          <span className="font-semibold text-foreground">{dayText(t.deadline)}</span>
+          {t.days_left !== null && (
+            <span className={t.days_left < 0 ? "text-status-critical" : t.days_left <= 14 ? "text-status-warning" : ""}>
+              {" "}· {daysLeftText(t.days_left)}
+            </span>
+          )}
+        </p>
+      )}
+      {t?.kind === "week" && t.week !== null && <p>Teaching week {t.week} (no calendar date)</p>}
+      {milestones.length > 0 && (
+        <div>
+          <p className="font-semibold text-foreground">Milestones</p>
+          <ul className="mt-0.5 flex flex-col gap-0.5">
+            {milestones.map((m) => (
+              <li key={m.decision_id}>
+                {m.name}: {m.date ? dayText(m.date) : m.week !== null ? `week ${m.week}` : m.when}
+                <span> · from {m.proposed_by}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const POLL_MS = 10000
 const POLL_WHILE_READING_MS = 2500     // a document is being read: refresh sooner
@@ -33,6 +80,60 @@ type Decide = (s: PlanSuggestion, action: "accept" | "dismiss") => void
 function StatusBadge({ status }: { status: string }) {
   const s = STATUS[status] ?? { text: status, cls: "border-border text-muted" }
   return <span className={`rounded-full border px-2 py-0.5 text-xs ${s.cls}`}>{s.text}</span>
+}
+
+const STATUS_WORD: Record<string, string> = {
+  missing: "not discussed", uncertain: "not sure", known: "mentioned", confirmed: "confirmed", conflicting: "disagreement",
+}
+
+function HistoryList({ entries, showField = false }: { entries: PlanHistoryEntry[]; showField?: boolean }) {
+  if (entries.length === 0) return <p className="text-xs text-muted">No changes yet.</p>
+  return (
+    <ol className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
+      {entries.map((e) => (
+        <li key={e.version} className="relative text-xs">
+          <span className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-primary" aria-hidden />
+          <p>
+            {showField && <span className="font-semibold">{e.label}: </span>}
+            <span className="text-foreground">{e.summary}</span>
+          </p>
+          <p className="text-muted">
+            {shortDate(e.time)}
+            {e.status_before !== e.status_after &&
+              ` · ${STATUS_WORD[e.status_before] ?? e.status_before} → ${STATUS_WORD[e.status_after] ?? e.status_after}`}
+            {e.confidence_band ? ` · confidence ${e.confidence_band}` : ""}
+          </p>
+          {e.text && <p className="mt-0.5 text-muted">&ldquo;{e.text}&rdquo;</p>}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function FieldHistory({ teamId, field, version }: { teamId: string; field: string; version: number }) {
+  const [open, setOpen] = useState(false)
+  const [entries, setEntries] = useState<PlanHistoryEntry[] | null>(null)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    getPlanHistory(teamId, field)
+      .then((r) => { if (alive) { setEntries(r.entries); setError("") } })
+      .catch((e) => alive && setError(e.message))
+    return () => { alive = false }
+  }, [open, teamId, field, version])          // reload while open whenever the blueprint changes
+
+  return (
+    <details className="mt-1" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer text-xs text-primary">History</summary>
+      <div className="mt-1">
+        {error ? <p className="text-xs text-status-critical">{error}</p>
+          : entries === null ? <p className="text-xs text-muted">Loading...</p>
+          : <HistoryList entries={entries} />}
+      </div>
+    </details>
+  )
 }
 
 function Suggestions({ items, canEdit, busy, onDecide }: {
@@ -74,8 +175,11 @@ function Suggestions({ items, canEdit, busy, onDecide }: {
   )
 }
 
-function FieldCard({ f, showSources, canEdit, busy, onDecide }: {
+function FieldCard({ f, teamId, version, milestones, showSources, canEdit, busy, onDecide }: {
   f: PlanField
+  teamId: string
+  version: number
+  milestones: PlanMilestone[]
   showSources: boolean
   canEdit: boolean
   busy: string | null
@@ -109,6 +213,8 @@ function FieldCard({ f, showSources, canEdit, busy, onDecide }: {
         </p>
       )}
 
+      {f.name === "timeline" && <TimelineDetails t={f.timeline} milestones={milestones} />}
+
       {f.suggestions && f.suggestions.length > 0 && (
         <Suggestions items={f.suggestions} canEdit={canEdit} busy={busy} onDecide={onDecide} />
       )}
@@ -126,6 +232,8 @@ function FieldCard({ f, showSources, canEdit, busy, onDecide }: {
           </ul>
         </details>
       )}
+
+      {f.mentions > 0 && <FieldHistory teamId={teamId} field={f.name} version={version} />}
     </li>
   )
 }
@@ -279,7 +387,7 @@ export function BlueprintPlan({ teamId }: { teamId: string }) {
     <div className="flex flex-col gap-3">
       <Card
         title="Planning blueprint (built by Buddy from your chat and documents)"
-        note="Buddy listens to the team chat and reads your uploaded documents to fill these nine fields. Nothing here is final until the team confirms it."
+        note="Buddy listens to the team chat and reads your uploaded documents to fill these ten fields. Nothing here is final until the team confirms it."
       >
         <div className="flex flex-col gap-2">
           <p className="text-sm">
@@ -308,12 +416,19 @@ export function BlueprintPlan({ teamId }: { teamId: string }) {
         <DocumentsCard teamId={teamId} documents={plan.documents} canEdit={canEdit} onChanged={load} />
       )}
 
+      {plan.recent_changes && plan.recent_changes.length > 0 && (
+        <Card title="Recent changes" note="How the plan has changed lately. Open a field's History to see all of its changes.">
+          <HistoryList entries={plan.recent_changes} showField />
+        </Card>
+      )}
+
       {actionError && <Notice tone="error">{actionError}</Notice>}
 
       <ul className="flex flex-col gap-2">
         {plan.fields.map((f) => (
-          <FieldCard key={f.name} f={f} showSources={plan.can_see_sources} canEdit={canEdit}
-                     busy={busy} onDecide={decide} />
+          <FieldCard key={f.name} f={f} teamId={teamId} version={plan.version} milestones={plan.milestones ?? []}
+                     showSources={plan.can_see_sources}
+                     canEdit={canEdit} busy={busy} onDecide={decide} />
         ))}
       </ul>
 
