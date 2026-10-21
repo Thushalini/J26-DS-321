@@ -5,6 +5,7 @@ import pandas as pd
 
 from ..common import config
 from .feature_spec import AT_MOST, FEATURES, KINDS, RANGES_BY_KIND, ZERO_WHEN_ZERO
+from .sources import SOURCES
 
 
 def _check(name: str, passed: bool, detail) -> dict:
@@ -41,7 +42,10 @@ def _wrong_directions(frame: pd.DataFrame) -> dict:
     problems = {}
     for spec in FEATURES:
         rho = frame[spec.name].corr(success, method="spearman")
-        if pd.isna(rho) or rho * spec.direction < minimum:
+        if spec.direction == 0:
+            if not pd.isna(rho) and abs(rho) >= minimum:
+                problems[spec.name] = round(float(rho), 3)
+        elif pd.isna(rho) or rho * spec.direction < minimum:
             problems[spec.name] = None if pd.isna(rho) else round(float(rho), 3)
     return problems
 
@@ -72,7 +76,9 @@ def run_checks(frame: pd.DataFrame, expected_shares: dict | None = None) -> list
     share_gaps = _share_gaps(frame, expected_shares)
     forbidden = [spec.name for spec in FEATURES if spec.source in config.FORBIDDEN_FEATURE_SOURCES]
     bad_kinds = [spec.name for spec in FEATURES if spec.kind not in KINDS]
-    provisional = [spec.name for spec in FEATURES if spec.status != "confirmed" or not spec.reference]
+    provisional = [spec.name for spec in FEATURES if spec.status != "confirmed" or not spec.weight_sources]
+    unknown_sources = sorted({key for spec in FEATURES for key in spec.weight_sources + spec.range_sources} - set(SOURCES))
+    placeholder_ranges = [spec.name for spec in FEATURES if not spec.range_sources]
 
     return [
         _check("required_columns", True, []),
@@ -86,7 +92,9 @@ def run_checks(frame: pd.DataFrame, expected_shares: dict | None = None) -> list
         _check("relationships_as_specified", not wrong_directions, wrong_directions),
         _check("no_marks_in_features", not forbidden, forbidden),
         _check("known_feature_kinds", not bad_kinds, bad_kinds),
+        _check("sources_listed", not unknown_sources, unknown_sources),
         _check("every_feature_sourced", not provisional, provisional),
+        _check("ranges_sourced", not placeholder_ranges, placeholder_ranges),
     ]
 
 

@@ -33,7 +33,7 @@ FORBIDDEN_FEATURE_SOURCES = {"academic_marks"}
 
 SYNTHETIC = {
     "n_projects": 2000,
-    "outcome_shares": {"success": 0.35, "delayed": 0.45, "failed": 0.20},
+    "outcome_shares": {"success": 0.35, "delayed": 0.46, "failed": 0.19},
     "outcome_noise_scale": 0.6,
 }
 
@@ -47,12 +47,15 @@ SPLIT = {"train": 0.70, "val": 0.15, "test": 0.15}
 MODEL_PARAMS = {
     "logistic_regression": {"max_iter": 1000},
     "random_forest": {"n_estimators": 300, "min_samples_leaf": 5},
-    "gradient_boosting": {"n_estimators": 200, "learning_rate": 0.05, "max_depth": 3},
+    "gradient_boosting": {"max_iter": 200, "learning_rate": 0.05, "max_depth": 3},
     "stacking_cv": 5,
+    "monotonic": True,
 }
 
 CALIBRATION = {
     "methods": ["sigmoid", "isotonic"],
+    "preferred": "sigmoid",
+    "switch_margin": 0.005,
     "cv": 5,
     "bins": 10,
 }
@@ -92,7 +95,7 @@ TUNING = {
     "grids": {
         "logistic_regression": {"logisticregression__C": [0.1, 1.0, 10.0]},
         "random_forest": {"min_samples_leaf": [2, 5, 10], "max_depth": [None, 8]},
-        "gradient_boosting": {"n_estimators": [100, 200], "learning_rate": [0.03, 0.1], "max_depth": [2, 3]},
+        "gradient_boosting": {"max_iter": [100, 200], "learning_rate": [0.03, 0.1], "max_depth": [2, 3]},
     },
 }
 
@@ -264,6 +267,39 @@ API = {
     "demo_project_index": 0,
     "background_size": 50,
     "min_team_signals": 5,
+    "fill_sample_size": 500,
+    "range_simulations": 200,
+    "range_quantiles": [0.1, 0.9],
+}
+
+STATUS_RULES = {
+    "good_at": 70,
+    "fine_at": 50,
+    "attention_when": {"open_high_issues": 1},
+}
+
+MILESTONE_RESULTS = {
+    "options": {"passed_well": "Passed well", "passed_with_issues": "Passed with issues", "needs_rework": "Needs rework"},
+    "record_roles": ["lead", "member"],
+    "max_name": 80,
+}
+
+THRESHOLD_TESTS_JSON = RESULTS_DIR / "threshold_sensitivity.json"
+
+THRESHOLD_TESTS = {
+    "subsets_per_count": 20,
+    "range_rows": 5,
+    "range_subsets": 5,
+    "status": [{"good_at": 65, "fine_at": 45}, {"good_at": 70, "fine_at": 50}, {"good_at": 75, "fine_at": 55}],
+    "min_team_signals": [4, 5, 6],
+    "min_stage_items": [10, 20, 30],
+    "weak_below": [30, 40, 50],
+    "recurring_at_least": [1, 2, 3],
+}
+
+TIMELINE = {
+    "min_items_per_stage": 3,
+    "run_stages": ["model_development", "model_evaluation"],
 }
 
 HISTORY = {
@@ -281,13 +317,12 @@ READINESS = {
             "label": "Model versioning",
             "stage": "deployment_mlops",
             "criteria": {
-                "dependencies": {"text": "dependencies listed", "points": 1, "patterns": [
-                    r"(^|/)requirements[^/]*\.txt$", r"(^|/)environment\.ya?ml$", r"(^|/)pyproject\.toml$",
-                    r"(^|/)(pipfile|poetry)\.lock$", r"(^|/)setup\.py$"]},
-                "data_versioning": {"text": "data or models versioned (DVC or similar)", "points": 1, "patterns": [
-                    r"\.dvc$", r"(^|/)dvc\.(yaml|lock)$", r"(^|/)\.dvc/"]},
                 "experiment_tracking": {"text": "experiments tracked (MLflow, W&B or similar)", "points": 1, "patterns": [
                     r"(^|/)mlruns/", r"(^|/)mlproject$", r"mlflow", r"(^|/)wandb/", r"(^|/)\.neptune/"]},
+                "saved_models": {"text": "trained models saved", "points": 1, "patterns": [
+                    r"(^|/)models?/[^/]+\.(pkl|joblib|onnx|h5|pt|pth|keras|safetensors)$"]},
+                "model_metadata": {"text": "model versions described (registry or metadata)", "points": 1, "patterns": [
+                    r"(^|/)mlmodel$", r"model[_-]?registry", r"(^|/)models?/[^/]+\.(json|ya?ml)$"]},
             },
         },
         "monitoring": {
@@ -296,9 +331,8 @@ READINESS = {
             "criteria": {
                 "monitoring": {"text": "monitoring or drift checks", "points": 1, "patterns": [
                     r"monitor", r"drift", r"evidently", r"whylogs"]},
-                "data_validation": {"text": "data validation", "points": 1, "patterns": [
-                    r"data_?validation", r"validate_?data", r"great_expectations", r"pandera",
-                    r"(^|/)expectations/", r"(^|/)schemas?/"]},
+                "metrics_tracked": {"text": "model metrics recorded", "points": 1, "patterns": [
+                    r"(^|/)metrics?[^/]*\.(json|csv|ya?ml|txt)$", r"(^|/)(eval|evaluation)[^/]*\.(json|csv)$"]},
                 "alerts_logging": {"text": "alerts or logging set up", "points": 1, "patterns": [
                     r"prometheus", r"grafana", r"alertmanager", r"(^|/)alerts?\.(py|ya?ml)$",
                     r"(^|/)logging\.(conf|ini|ya?ml|json)$"]},
@@ -313,9 +347,8 @@ READINESS = {
                 "ci": {"text": "continuous integration", "points": 1, "patterns": [
                     r"(^|/)\.github/workflows/[^/]+\.ya?ml$", r"(^|/)\.gitlab-ci\.yml$", r"(^|/)jenkinsfile$",
                     r"(^|/)azure-pipelines\.ya?ml$", r"(^|/)\.circleci/"]},
-                "scripted_pipeline": {"text": "scripted pipeline or config files", "points": 1, "patterns": [
-                    r"(^|/)dvc\.yaml$", r"(^|/)makefile$", r"(^|/)pipelines?/", r"(^|/)pipeline[^/]*\.py$",
-                    r"(^|/)dags/", r"(^|/)params\.ya?ml$", r"(^|/)configs?/[^/]+\.(ya?ml|json|toml)$"]},
+                "scripted_pipeline": {"text": "scripted pipeline", "points": 1, "patterns": [
+                    r"(^|/)dvc\.yaml$", r"(^|/)makefile$", r"(^|/)pipelines?/", r"(^|/)pipeline[^/]*\.py$", r"(^|/)dags/"]},
                 "container": {"text": "container setup", "points": 1, "patterns": [
                     r"(^|/)dockerfile", r"(^|/)(docker-)?compose\.ya?ml$", r"(^|/)\.devcontainer/"]},
             },
@@ -330,6 +363,31 @@ READINESS = {
                     r"model[_-]?card", r"data[_-]?card", r"datasheet"]},
             },
         },
+    },
+}
+
+PROJECT_HEALTH = {
+    "reproducibility": {
+        "environment": {"text": "environment or lock file", "points": 1, "patterns": [
+            r"(^|/)requirements[^/]*\.txt$", r"(^|/)environment\.ya?ml$", r"(^|/)pyproject\.toml$",
+            r"(^|/)pipfile(\.lock)?$", r"(^|/)poetry\.lock$", r"(^|/)setup\.py$", r"(^|/)conda-lock", r"(^|/)renv\.lock$"]},
+        "parameters": {"text": "parameters in config files", "points": 1, "patterns": [
+            r"(^|/)params\.ya?ml$", r"(^|/)(conf|configs?)/[^/]+\.(ya?ml|json|toml)$", r"(^|/)config\.(ya?ml|json|toml)$"]},
+        "data": {"text": "data versioned or a download script", "points": 1, "patterns": [
+            r"\.dvc$", r"(^|/)dvc\.lock$", r"(^|/)\.dvc/", r"(download|fetch|get|make)_?(data|dataset)"]},
+        "scripts": {"text": "runnable scripts, not only notebooks", "points": 1, "patterns": [
+            r"(^|/)(src|scripts)/[^/]+\.py$", r"(^|/)(train|run|main|predict|evaluate)[^/]*\.py$"]},
+    },
+    "data_quality": {
+        "cause": "data_leakage",
+        "validation_bonus": 0.1,
+        "validation_patterns": [r"data_?validation", r"validate_?data", r"great_expectations", r"pandera",
+                                r"(^|/)expectations/", r"(^|/)schemas?/"],
+    },
+    "model_performance": {
+        "score_fields": ["final_val_accuracy", "final_val_score"],
+        "default_target": 0.80,
+        "lower_is_better": ["rmse", "mae", "mse", "mape", "error", "loss"],
     },
 }
 

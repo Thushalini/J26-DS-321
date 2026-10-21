@@ -68,3 +68,15 @@ def test_tuning_and_cross_validation_are_reported():
     for scores in report["cross_validation"].values():
         assert set(scores) == set(config.CROSS_VALIDATION["scoring"])
         assert 0 <= scores["brier"]["mean"] <= 1
+
+
+def test_a_near_tie_keeps_the_preferred_calibration(monkeypatch):
+    from sklearn.linear_model import LogisticRegression
+    from component4.common import config as settings
+    from component4.m2_prediction import models
+    from component4.m2_prediction.data import split as split_data
+    from component4.synthetic import generator as gen
+    parts = split_data(gen.generate(400))
+    monkeypatch.setitem(settings.CALIBRATION, "switch_margin", 1.0)
+    _, chosen, _ = models.calibrate_best(LogisticRegression(max_iter=500), *parts["train"], *parts["val"])
+    assert chosen == settings.CALIBRATION["preferred"]
