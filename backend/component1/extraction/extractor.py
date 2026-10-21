@@ -59,6 +59,19 @@ def build_prompt(message: str) -> str:
     return PROMPT_TEMPLATE.replace("{message}", message)
 
 
+_MESSAGE_START = "Message:\n<<<\n"
+_MESSAGE_END = "\n>>>\n"
+
+
+def message_from_prompt(prompt: str) -> str:
+    """The message that build_prompt() wrapped. Lets a non-LLM extractor stand in for the LLM."""
+    start = prompt.find(_MESSAGE_START)
+    end = prompt.rfind(_MESSAGE_END)
+    if start == -1 or end == -1 or end < start + len(_MESSAGE_START):
+        return prompt
+    return prompt[start + len(_MESSAGE_START) : end]
+
+
 def _parse_json(raw: str) -> Optional[dict]:
     """Find the JSON object in the model's reply, even if it is wrapped in a code fence."""
     start, end = raw.find("{"), raw.rfind("}")

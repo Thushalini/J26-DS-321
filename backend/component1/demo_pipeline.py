@@ -1,12 +1,14 @@
 """Run five SAMPLE messages through the whole connected pipeline.
 
 Run from the backend folder:
-    python -m component1.demo_pipeline --fake        (pretend model, no key needed)
-    python -m component1.demo_pipeline               (real Gemini, sample messages only)
-    python -m component1.demo_pipeline --delay 30    (wait between Gemini calls)
+    python -m component1.demo_pipeline --fake         (pretend model, nothing sent anywhere)
+    python -m component1.demo_pipeline                (as the app is set up: rules, then Groq/Gemini)
+    python -m component1.demo_pipeline --mode rules   (rules only: no key, nothing sent)
+    python -m component1.demo_pipeline --mode llm     (the language model for every message)
+    python -m component1.demo_pipeline --delay 30     (wait between messages, for rate limits)
 
 Train the state model first:  python -m component1.state.train
-SAMPLE MESSAGES ONLY. On Gemini's free tier Google may keep what you send.
+SAMPLE MESSAGES ONLY. On a free tier the provider (Groq or Google) may keep what you send.
 """
 from __future__ import annotations
 
@@ -14,18 +16,14 @@ import argparse
 import json
 import sys
 import time
-from pathlib import Path
 
 from .agent.signals import CONFLICT, GAP
 from .common.events import EventStore
 from .common.schema import FieldName
-from .extraction.demo_extract import SAMPLE_MESSAGES
-from .extraction.gemini_provider import GeminiConfigError, load_env_file, make_gemini_llm
+from .extraction.demo_extract import SAMPLE_MESSAGES, add_extractor_options, setup_extractor
 from .gaps.gaps import check_completeness
 from .pipeline import process_message
 from .state.predict import MODEL_PATH, load_model
-
-BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 # What a good model would return for each sample message. Used by --fake.
 SCRIPT = {
@@ -50,8 +48,8 @@ def scripted_llm(prompt: str) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--fake", action="store_true", help="use a pretend model instead of Gemini")
-    ap.add_argument("--delay", type=float, default=0.0, help="seconds to wait between Gemini calls")
+    ap.add_argument("--fake", action="store_true", help="use a pretend model (scripted answers), send nothing")
+    add_extractor_options(ap)
     args = ap.parse_args(argv)
 
     if not MODEL_PATH.exists():
@@ -63,17 +61,11 @@ def main(argv=None) -> int:
         llm = scripted_llm
         print("PRETEND MODEL (scripted answers). Nothing is sent anywhere.\n")
     else:
-        load_env_file(BACKEND_DIR / ".env")
-        try:
-            llm = make_gemini_llm()
-        except GeminiConfigError as exc:
-            print(f"Cannot start: {exc}")
-            return 1
-        print("SAMPLE MESSAGES ONLY. Nothing real is being sent.\n")
+        llm = setup_extractor(args.mode)
 
     store = EventStore("demo")
     for i, (message_id, speaker, text) in enumerate(SAMPLE_MESSAGES):
-        if i and args.delay and not args.fake:
+        if i and args.delay and getattr(llm, "mode", "rules") != "rules":
             time.sleep(args.delay)
         print(f"{speaker}: {text}")
         try:
