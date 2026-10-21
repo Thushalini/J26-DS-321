@@ -96,7 +96,7 @@ def test_a_group_with_enough_data_gets_a_prediction(app, busy_team):
     client, _ = app
     body = client.get(f"/c4/teams/{busy_team['id']}/prediction", headers=busy_team["lead"]).json()
     assert body["enough_data"] is True and 0 <= body["probability"] <= 100
-    assert body["signals_from_team"] == 7 and body["readiness"]["score"] > 0
+    assert body["signals_from_team"] == 8 and body["readiness"]["score"] > 0
     assert body["history"] == [body["probability"]]
 
 
@@ -198,3 +198,50 @@ def test_helpers_need_at_least_one_saved_sheet(app):
     lead, _ = account(client, "lead2@t.io")
     t = client.post("/app/teams", json={"name": "Empty"}, headers=lead).json()
     assert client.post(f"/c4/teams/{t['team_id']}/helpers", headers=lead, json={"stages": ["eda"]}).status_code == 422
+
+
+def test_todays_number_comes_with_a_range(app, busy_team):
+    client, _ = app
+    body = client.get(f"/c4/teams/{busy_team['id']}/prediction", headers=busy_team["lead"]).json()
+    spread = body["probability_range"]
+    assert spread["low"] <= body["probability"] <= spread["high"] and spread["high"] > spread["low"]
+
+
+def test_supervisor_outlook_suggests_a_dot_per_group(app, team):
+    client, _ = app
+    rows = client.get("/c4/supervisor/outlook", headers=team["sup"]).json()
+    assert [r["team_id"] for r in rows] == [team["id"]] and rows[0]["status"] is None
+
+
+def test_only_supervisors_get_an_outlook(app, team):
+    client, _ = app
+    assert client.get("/c4/supervisor/outlook", headers=team["lead"]).status_code == 403
+
+
+def test_status_rules():
+    from component4.api.outlook import status
+    assert status(80, {}) == "good" and status(60, {}) == "fine" and status(40, {}) == "attention"
+    assert status(90, {"open_high_issues": 2}) == "attention"
+
+
+def test_the_group_records_milestone_results_and_the_supervisor_only_reads(app, team):
+    client, _ = app
+    url = f"/c4/teams/{team['id']}/milestone-results"
+    entry = {"milestone": "PP1", "milestone_date": "2026-12-15", "result": "passed_with_issues"}
+    listed = client.post(url, headers=team["lead"], json=entry).json()
+    assert [(r["milestone"], r["date"], r["result"]) for r in listed] == [("PP1", "2026-12-15", "passed_with_issues")]
+    assert client.get(url, headers=team["sup"]).json() == listed
+    assert client.post(url, headers=team["sup"], json=entry).status_code == 403
+    assert client.post(url, headers=team["lead"], json={**entry, "result": "great"}).status_code == 422
+    assert client.delete(f"{url}/{listed[0]['result_id']}", headers=team["lead"]).json() == []
+
+
+def test_results_are_paired_with_the_last_prediction_before_the_milestone(app, busy_team):
+    import component2.db as c2db
+    from component4.m6_improvement import milestone_results
+    client, _ = app
+    client.get(f"/c4/teams/{busy_team['id']}/prediction", headers=busy_team["lead"])
+    client.post(f"/c4/teams/{busy_team['id']}/milestone-results", headers=busy_team["lead"],
+                json={"milestone": "Viva", "milestone_date": "2099-01-01", "result": "passed_well"})
+    paired = [p for p in milestone_results.paired_with_predictions(c2db.connect()) if p["team_id"] == busy_team["id"]]
+    assert paired and paired[0]["probability_before"] is not None
