@@ -41,4 +41,23 @@ export const supervisorCopy = {
   pastTitle: "Past groups",
   pastNote: "Groups you removed from your list.",
   restore: "Back to my list",
+  searchLabel: "Search groups",
+  searchPlaceholder: "Search by group name",
+  noMatches: "No groups match your search.",
+} as const
+
+export const supervisorLayout = {
+  groupListAsPicker: true,
+  tabs: ["home", "behavior", "summary"],
+  landing: "/teams",
+  openGroupAt: "/behavior",
+  allowedPaths: ["/teams", "/behavior", "/summary", "/account", "/guide", "/feedback"],
+} as const
+
+export const supervisorHeaderCopy = {
+  currentGroup: "Group",
+  noGroup: "No group open",
+  myGroups: "My groups",
+  researchLabel: "Research dataset",
+  researchPlaceholder: "Research dataset (Phase 1)…",
 } as const

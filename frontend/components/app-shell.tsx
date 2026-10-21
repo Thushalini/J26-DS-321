@@ -8,7 +8,9 @@ import { useEffect } from "react"
 import { AppHeader } from "@/components/app-header"
 import { BottomNav } from "@/components/bottom-nav"
 import { FeedbackButton } from "@/components/feedback-button"
+import { isSupervisorLayout } from "@/lib/navigation"
 import { useSession } from "@/lib/session"
+import { supervisorLayout } from "@/lib/supervision"
 
 const NO_TEAM_OK = ["/teams", "/feedback", "/account"]
 
@@ -20,6 +22,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!ready) return
     if (!user) router.replace("/login")
+    else if (isSupervisorLayout(user.role) && !supervisorLayout.allowedPaths.some((p) => pathname.startsWith(p)))
+      router.replace(supervisorLayout.landing)
     else if (!team && !NO_TEAM_OK.some((p) => pathname.startsWith(p))) router.replace("/teams")
   }, [ready, user, team, pathname, router])
 
