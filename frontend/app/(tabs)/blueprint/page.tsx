@@ -1,8 +1,9 @@
 "use client"
-// Blueprint: the team's planned target / algorithm / metric. Component 2 measures drift against it.
-// Stand-in for Component 1 (which will produce the blueprint automatically later).
+// Blueprint tab. Top: the nine-field planning blueprint built by Component 1 (Buddy) from the chat.
+// Below: the three-value plan that Component 2 measures drift against (entered by hand).
 import { useEffect, useState } from "react"
 
+import { BlueprintPlan } from "@/components/blueprint-plan"
 import { Button, Card, Field, Notice, Pill, inputClass } from "@/components/ui"
 import { api, shortDate } from "@/lib/api"
 import { useSession } from "@/lib/session"
@@ -71,7 +72,12 @@ export default function BlueprintPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card title="Project blueprint" note="The plan Component 2 checks the team's work against. Component 1 will fill this in automatically; until then the team enters it here.">
+      {!team.is_research && <BlueprintPlan teamId={team.team_id} />}
+
+      <Card
+        title="Drift-check plan (target / algorithm / metric)"
+        note="The three-value plan Component 2 checks the team's work against. Buddy copies a value here once it is known or confirmed; a value typed by hand is never overwritten."
+      >
         {bp && (
           <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
             <Pill tone={bp.source === "inferred" ? "research" : "neutral"}>{SOURCE_TEXT[bp.source]}</Pill>
@@ -82,7 +88,7 @@ export default function BlueprintPage() {
 
       {error && <Notice tone="error">{error}</Notice>}
       {msg && <Notice tone="success">{msg}</Notice>}
-      {!bp && !error && <p className="text-sm text-muted">Loading…</p>}
+      {!bp && !error && <p className="text-sm text-muted">Loading...</p>}
 
       {bp && (
         <Card>
@@ -101,7 +107,7 @@ export default function BlueprintPage() {
                 <Field label="Notes (optional)">
                   <textarea className={`${inputClass} h-20`} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
                 </Field>
-                <div><Button onClick={save} disabled={saving}>{saving ? "Saving and re-checking drift…" : "Save blueprint"}</Button></div>
+                <div><Button onClick={save} disabled={saving}>{saving ? "Saving and re-checking drift..." : "Save blueprint"}</Button></div>
               </>
             ) : (
               bp.notes && <p className="text-sm text-muted">{bp.notes}</p>

@@ -141,3 +141,51 @@ export function shortDate(ts: string | null | undefined) {
   const d = new Date(ts)
   return d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
 }
+// ---- Component 1: the living blueprint (nine planning fields) ----
+
+export type PlanStatus = "missing" | "uncertain" | "known" | "confirmed" | "conflicting" | string
+
+export interface PlanEvidence {
+  speaker: string
+  text: string
+  source_id: string
+  source_type: string
+  time: string | null
+}
+
+export interface PlanField {
+  name: string
+  label: string
+  status: PlanStatus
+  value: string | null
+  confidence_band: "High" | "Medium" | "Low" | null
+  mentions: number
+  candidates?: string[]
+  evidence?: PlanEvidence[]
+}
+
+export interface PlanData {
+  available: true
+  can_see_sources: boolean
+  team_id: string
+  version: number
+  updated_at: string | null
+  readiness: {
+    complete: boolean
+    confirmed: number
+    total: number
+    missing: string[]
+    conflicting: string[]
+    not_confirmed: string[]
+    low_confidence: string[]
+  }
+  next_gaps: string[]
+  fields: PlanField[]
+  note: string
+}
+
+export type PlanResponse = PlanData | { available: false; reason: string }
+
+export function getPlan(teamId: string) {
+  return api<PlanResponse>(`/app/teams/${encodeURIComponent(teamId)}/plan`)
+}
