@@ -14,6 +14,7 @@ import {
   type PlanData,
   type PlanDocument,
   type PlanField,
+  type PlanCheck,
   type PlanHistoryEntry,
   type PlanMilestone,
   type PlanSuggestion,
@@ -28,6 +29,58 @@ function daysLeftText(n: number) {
   if (n === 0) return "today"
   if (n < 0) return `${-n} ${n === -1 ? "day" : "days"} ago`
   return `${n} ${n === 1 ? "day" : "days"} left`
+}
+
+const CHECK_LOOK: Record<string, { word: string; mark: string; cls: string }> = {
+  pass: { word: "Fits", mark: "✓", cls: "border-status-good text-status-good bg-status-good/10" },
+  warning: { word: "Check this", mark: "!", cls: "border-status-warning text-foreground bg-status-warning/10" },
+  fail: { word: "Does not fit", mark: "✕", cls: "border-status-critical text-status-critical bg-status-critical/10" },
+}
+
+function PlanChecks({ checks }: { checks: PlanCheck[] }) {
+  const problems = checks.filter((c) => c.status !== "pass").length
+  return (
+    <Card
+      title="Plan checks"
+      note="Buddy checks that the parts of the plan fit together (for example, that the metric suits the task). These are standard data science rules of thumb, not a verdict. To change the plan, agree on it in the chat."
+    >
+      {checks.length === 0 ? (
+        <p className="text-sm text-muted">Nothing to check yet. Checks start once the task, algorithm or metric is known.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm">
+            {problems === 0 ? "Everything checked so far fits together." : `${problems} ${problems === 1 ? "thing" : "things"} to look at.`}
+          </p>
+          <ul className="flex flex-col gap-1.5">
+            {checks.map((c) => {
+              const look = CHECK_LOOK[c.status] ?? CHECK_LOOK.warning
+              return (
+                <li key={c.key} className="rounded-bar border border-border px-2 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{c.label}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-xs ${look.cls}`}>
+                      <span aria-hidden>{look.mark} </span>{look.word}
+                    </span>
+                  </div>
+                  {c.detail && <p className="mt-1 text-xs text-muted">{c.detail}</p>}
+                  {c.alternatives.length > 0 && c.status !== "pass" && (
+                    <p className="mt-1 text-xs">
+                      <span className="text-muted">Alternatives: </span>
+                      {c.alternatives.map((a) => (
+                        <span key={a} className="mr-1 inline-block rounded-bar border border-primary/40 bg-primary/5 px-1.5 py-0.5">
+                          {a}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+    </Card>
+  )
 }
 
 function TimelineDetails({ t, milestones }: { t: PlanTimeline | null | undefined; milestones: PlanMilestone[] }) {
@@ -411,6 +464,8 @@ export function BlueprintPlan({ teamId }: { teamId: string }) {
           {plan.updated_at && <p className="text-xs text-muted">Last change {shortDate(plan.updated_at)}</p>}
         </div>
       </Card>
+
+      {plan.checks && <PlanChecks checks={plan.checks} />}
 
       {plan.documents && (
         <DocumentsCard teamId={teamId} documents={plan.documents} canEdit={canEdit} onChanged={load} />

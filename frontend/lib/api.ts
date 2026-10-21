@@ -222,6 +222,16 @@ export interface PlanTimeline {
   week: number | null
 }
 
+/** One plan check: do two parts of the plan fit together? */
+export interface PlanCheck {
+  key: string
+  label: string                      // e.g. "Metric fits the task"
+  field: string                      // the field a team would change to fix it
+  status: "pass" | "warning" | "fail" | string
+  detail: string                     // why, in a sentence (empty for a pass)
+  alternatives: string[]
+}
+
 export interface PlanMilestone {
   decision_id: string
   name: string
@@ -240,6 +250,8 @@ export interface PlanData {
   documents?: PlanDocument[] | null
   recent_changes?: PlanHistoryEntry[]
   milestones?: PlanMilestone[]
+  checks?: PlanCheck[]
+  feasibility?: Record<string, string> | null
   team_id: string
   version: number
   updated_at: string | null
