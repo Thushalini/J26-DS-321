@@ -18,6 +18,9 @@ def direction_check(explanation: shap.Explanation) -> list[dict]:
     data = pd.DataFrame(explanation.data, columns=explanation.feature_names)
     results = []
     for spec in FEATURES:
+        if spec.direction == 0:
+            results.append({"feature": spec.name, "expected": 0, "passed": True, "note": "neutral, not checked"})
+            continue
         column = explanation.feature_names.index(spec.name)
         rho = pd.Series(explanation.values[:, column]).corr(data[spec.name], method="spearman")
         rho = 0.0 if pd.isna(rho) else float(rho)
@@ -35,6 +38,9 @@ def sensitivity_analysis(model, rows: pd.DataFrame) -> list[dict]:
     baseline = model.predict_proba(rows)[:, 1]
     results = []
     for spec in FEATURES:
+        if spec.direction == 0:
+            results.append({"feature": spec.name, "step": 0, "passed": True, "note": "neutral, not checked"})
+            continue
         low, high = RANGES_BY_KIND[spec.kind]
         nudged = rows.copy()
         moved = nudged[spec.name] + spec.direction * settings["steps"][spec.kind]

@@ -2,6 +2,7 @@ import type { Prediction } from "@/lib/predict/types"
 
 export const samplePrediction: Prediction = {
   source: "sample",
+  enoughData: true,
   evaluatedAt: "2026-10-08",
   probability: 72,
   history: [58, 61, 60, 66, 72],

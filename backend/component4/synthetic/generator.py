@@ -7,7 +7,7 @@ success / delayed / failed at the configured shares.
 """
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
+from scipy.stats import beta, norm
 
 from ..common import config
 from .feature_spec import AT_MOST, FEATURES, ZERO_WHEN_ZERO, FeatureSpec
@@ -16,10 +16,13 @@ from .feature_spec import AT_MOST, FEATURES, ZERO_WHEN_ZERO, FeatureSpec
 def _feature_values(spec: FeatureSpec, health: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     own = rng.standard_normal(health.size)
     latent = spec.direction * spec.loading * health + np.sqrt(1 - spec.loading**2) * own
+    share = norm.cdf(latent)
+    if "beta" in spec.params:
+        share = beta.ppf(share, *spec.params["beta"])
     if spec.kind == "unit":
-        return np.round(norm.cdf(latent), 4)
+        return np.round(share, 4)
     if spec.kind == "score100":
-        return np.round(100 * norm.cdf(latent)).astype(int)
+        return np.round(100 * share).astype(int)
     if spec.kind == "count":
         rate = spec.params["mean"] * np.exp(spec.params["spread"] * latent)
         return rng.poisson(rate)

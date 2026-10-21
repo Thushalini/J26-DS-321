@@ -28,4 +28,4 @@ python-multipart>=0.0.20      # FastAPI file uploads (Component 1 document uploa
 
 shap>=0.47
 matplotlib>=3.8
-pytest>=8.0
+pypdf>=5.0

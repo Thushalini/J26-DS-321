@@ -40,12 +40,15 @@ Run the tests:
 python -m pytest component4/tests
 ```
 
-Outputs: `data/synthetic_projects.csv`, `results/data_validation.json`, `results/metrics.json`, `results/explainability.json`, `models/success_model.joblib`. The full run takes about 3 minutes, most of it SHAP.
+Outputs: `data/synthetic_projects.csv`, `models/success_model.joblib`, and in `results/`: `data_validation.json`, `metrics.json` (incl. tuning and cross-validation), `seed_stability.json`, `explainability.json`, `forecast_example.json`, `failure_patterns.json`, `improvement_scenario.json`. The full run takes about 10 minutes.
 
 ## Status
 
 - **Synthetic data (O2):** generator and level-1 checks work. Every feature in `synthetic/feature_spec.py` is still **provisional** — scales, weights and ranges have no confirmed source, so results are not reportable yet. The pipeline prints a warning until every feature has a reference.
-- **Prediction (O3):** baselines (rule-based, LogReg, RF, GB), stacking ensemble, Platt vs isotonic calibration chosen on validation Brier, and test metrics (precision, recall, macro-F1, AUC-ROC, Brier, ECE, calibration curve).
+- **Prediction (O3):** baselines (rule-based, LogReg, RF, GB), stacking ensemble, Platt vs isotonic calibration chosen on validation Brier, and test metrics (precision, recall, macro-F1, AUC-ROC, Brier, ECE, calibration curve). Base models tuned by grid search (Brier), 5-fold cross-validation and a 5-seed stability check.
 - **Explainability (O4):** permutation SHAP on the calibrated probability (contributions in probability points that add up to the prediction), global importance, per-project explanations, direction check and one-step sensitivity analysis.
-- **Feature integration (O1):** Component 3 adapter (`m1_feature_integration/c3_adapter.py`) turns per-run results into project features, as agreed with Component 3. Components 1 and 2 adapters wait for their answers.
-- **Not started:** readiness rubric, forecast cone, improvement engine, API.
+- **Feature integration (O1):** adapters for Component 1 (novelty; feasibility checks pass/warning/fail -> one 0-1 score), Component 2 (drift = worst of target/algorithm/metric with its driver; contribution balance = 1 - Gini of member activity) and Component 3 (issue features), and `assemble.py`, which builds one full feature row and lists what is still missing.
+- **Forecast cone (O5):** Monte Carlo simulation of the project week by week (score drift, new issues, resolved issues) scored by the model; percentiles per week in the shape the Predict screen uses; optional improvement trend; level-5 checks (starts at the current prediction, ordered, widens).
+- **Improvement engine (O6):** recurring failure patterns from Component 3's issue history (k-means on root-cause probabilities, k by silhouette); recommendations triggered by negative SHAP signals or recurring patterns, ranked by expected gain from re-scoring; before/after re-evaluation; level-6 scenario.
+- **API:** `/c4/health`, `/c4/features`, `POST /c4/predict` (features -> probability, SHAP factors, forecast cone, recommendations; missing features are filled with the training median and listed) and `/c4/demo` (a held-out synthetic project). Registered in `backend/main.py`; try it at http://127.0.0.1:8000/docs.
+- **Not started:** readiness rubric (needs the rubric wording), competency branch (needs the marks and module outlines), connecting the Predict screen to the API.

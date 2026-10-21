@@ -58,11 +58,51 @@ def resolve_alert(conn, team_id, run_id, resolved, user_id=None):
     return next((a for a in alerts_payload(conn, team_id)["alerts"] if a["run_id"] == run_id), None)
 
 
+NEUTRAL_GPU, NEUTRAL_COMMITS = 66.0, 2.0
+CONTEXT_DEFAULTS = {"hyperparam_tuning_logged": 0, "commit_gap_days": 1.0, "notebook_edit_freq_per_day": 3.0}
+
+
+def complete_run(team_id, run):
+    """A reporter only knows the training numbers. Fill in what it cannot know, and list what was assumed:
+    GPU use and commits get a neutral value; the drift score comes from Component 2's table for this team
+    (0.0 when it has none); the other context facts get neutral defaults."""
+    run = dict(run)
+    assumed = list(run.get("assumed", []))
+    epochs = []
+    for e in run.get("epochs", []):
+        e = dict(e)
+        if e.get("gpu_utilization_pct") is None:
+            e["gpu_utilization_pct"] = NEUTRAL_GPU
+            if "gpu_utilization_pct (not measured)" not in assumed:
+                assumed.append("gpu_utilization_pct (not measured)")
+        if e.get("commits_that_day") is None:
+            e["commits_that_day"] = NEUTRAL_COMMITS
+            if "commits_that_day (neutral value)" not in assumed:
+                assumed.append("commits_that_day (neutral value)")
+        epochs.append(e)
+    run["epochs"] = epochs
+    ctx = dict(run.get("context") or {})
+    if "drift_severity_score" not in ctx:
+        from ..collector import drift_reader                  # Component 2's drift scores for this team
+        d = drift_reader.read_drift(team_id)
+        if d["drift_severity_score"] is None:
+            ctx["drift_severity_score"], ctx["drift_source"] = 0.0, "default_0_no_score"
+        else:
+            ctx["drift_severity_score"], ctx["drift_source"] = d["drift_severity_score"], "component2"
+    for k, v in CONTEXT_DEFAULTS.items():
+        if k not in ctx:
+            ctx[k] = v
+            assumed.append(f"{k} (default)")
+    run["context"], run["assumed"] = ctx, assumed
+    return run
+
+
 def ingest_run(conn, team_id, run, run_ended_at=None):
-    """Score one run (same input as predict_live.predict_run) and save the alert for the team.
+    """Score one run (same input as predict_live.predict_run, but the context and the GPU / commit numbers
+    may be missing: complete_run fills them) and save the alert for the team.
     Raises ValueError for a badly formed run."""
     from ..predict_live import predict_run          # loads the trained models, so only when needed
-    result = predict_run(run)
+    result = predict_run(complete_run(team_id, run))
     store.ensure_schema(conn)
     store.save_alert(conn, team_id, result, run_ended_at)
     return result

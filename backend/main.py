@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from buddy.router import router as app_router
 from component2.api.router import router as c2_router
+from component4.api.router import router as c4_router
 
 try:
     from component1.hook import start_timer
@@ -36,6 +37,7 @@ app.add_middleware(
 
 app.include_router(c2_router)
 app.include_router(app_router)      # sign-in, teams, chat, blueprint, feedback (Buddy.ds app)
+app.include_router(c4_router)       # success prediction, explanation, forecast, recommendations
 
 try:
     from component1.api.router import router as c1_router
