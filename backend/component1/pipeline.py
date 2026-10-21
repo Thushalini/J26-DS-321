@@ -3,6 +3,11 @@
     message -> extract facts (feature 3) -> judge how settled each touched field is
     (feature 4) -> record that judgement -> work out what Buddy should be told.
 
+If the intent classifier says this message backs up a value someone else just proposed
+("ok, lock that in"), the caller passes `endorse=(field, value)`. The backing is then
+recorded as one more mention of that value from this speaker, so the state classifier
+sees one more person agreeing.
+
 Nothing here talks to a database or the internet by itself. The language model is a
 plain function you pass in, so tests can use a pretend one.
 """
@@ -14,10 +19,10 @@ from typing import Optional
 
 from .agent.signals import CONFLICT, GAP, SAVED, Signal
 from .common.events import EventStore
-from .common.schema import FieldName, FieldStatus
+from .common.schema import FieldName, FieldStatus, Provenance, SourceType
 from .extraction.extractor import LLMFn, apply_message
 from .gaps.gaps import ready_gaps
-from .state.features import field_features, mentions_for_field
+from .state.features import EXTRACTOR_ACTOR, field_features, mentions_for_field
 from .state.predict import predict_status
 
 STATE_ACTOR = "state_classifier"
@@ -33,7 +38,7 @@ _SAVED_DETAIL = {
 
 @dataclass
 class MessageResult:
-    saved: list[tuple[str, str]]                 # (field, value) the extractor saved from this message
+    saved: list[tuple[str, str]]                 # (field, value) saved from this message
     statuses: dict[str, tuple[str, float]]       # field -> (status, model confidence) for touched fields
     signals: list[Signal]                        # what Buddy should be told
 
@@ -70,11 +75,22 @@ def process_message(
     speaker: str,
     text: str,
     timestamp: Optional[datetime] = None,
+    endorse: Optional[tuple[str, str]] = None,
 ) -> MessageResult:
     extraction_events = apply_message(store, message_id, speaker, text, llm, timestamp)
 
+    # 0. A message that only backs up an earlier value ("ok, lock that in") has no facts of its
+    #    own, so the extractor found nothing. Record the backing as one more mention.
+    endorsed: list[tuple[str, str]] = []
+    if endorse and not extraction_events:
+        field, value = endorse
+        provenance = Provenance(source_type=SourceType.CHAT, source_id=message_id,
+                                speaker=speaker, text_span=text.strip()[:200])
+        store.update_field(FieldName(field), value, FieldStatus.KNOWN, 0.5, provenance, EXTRACTOR_ACTOR)
+        endorsed.append((field, value))
+
     # 1. Judge every field this message touched, and record the judgement.
-    touched = list(dict.fromkeys(e.payload["field"] for e in extraction_events))
+    touched = list(dict.fromkeys([e.payload["field"] for e in extraction_events] + [f for f, _ in endorsed]))
     statuses: dict[str, tuple[str, float]] = {}
     for field in touched:
         label, probability = predict_status(bundle, field_features(store.events, field))
@@ -89,11 +105,13 @@ def process_message(
     for event in extraction_events:
         field, value = event.payload["field"], event.payload["new_value"]
         signals.append(Signal(SAVED, field, (value,), detail=_SAVED_DETAIL.get(statuses[field][0], ""), source=speaker))
+    for field, value in endorsed:
+        signals.append(Signal(SAVED, field, (value,), detail=_SAVED_DETAIL.get(statuses[field][0], ""), source=speaker))
 
     signals.extend(state_signals(store))
 
     return MessageResult(
-        saved=[(e.payload["field"], e.payload["new_value"]) for e in extraction_events],
+        saved=[(e.payload["field"], e.payload["new_value"]) for e in extraction_events] + endorsed,
         statuses=statuses,
         signals=signals,
     )

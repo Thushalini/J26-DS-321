@@ -29,12 +29,13 @@ _tables_ready = False
 
 
 def service() -> AgentService:
-    """The one shared service. It uses the app's own connect(), so it follows DATABASE_URL."""
+    """The one shared service. It uses the app's own connect(), so it follows DATABASE_URL.
+    The decision-intent model is switched on here, so "ok, lock that in" counts as agreement."""
     global _service
     with _service_lock:
         if _service is None:
             from component2.db import connect
-            _service = AgentService(conn_factory=connect)
+            _service = AgentService(conn_factory=connect, use_intent=True)
         return _service
 
 

@@ -11,6 +11,9 @@ said (usually nothing). When a database connection is configured, it also:
 
 Run it in the background so a slow language model never delays the sender (for example
 with FastAPI BackgroundTasks). Without a connection it keeps everything in memory (tests).
+
+If use_intent=True, the decision-intent model is loaded once and handed to each team's agent,
+so a message like "ok, lock that in" counts as one more person agreeing. Off by default.
 """
 from __future__ import annotations
 
@@ -29,6 +32,7 @@ from .common.events import EventStore
 from .extraction.extractor import LLMFn
 from .extraction.gemini_provider import load_env_file
 from .extraction.llm import build_extractor_llm
+from .intent.predict import MODEL_PATH as INTENT_MODEL_PATH, load_model as load_intent_model
 from .state.predict import MODEL_PATH, load_model
 from .storage import (
     ensure_c1_tables,
@@ -98,6 +102,7 @@ class AgentService:
         model_path: Path = MODEL_PATH,
         env_file: Optional[Path] = BACKEND_DIR / ".env",
         conn_factory: Optional[Callable[[], Any]] = None,
+        use_intent: bool = False,
     ):
         self._bundle = bundle
         self._llm = llm
@@ -105,6 +110,9 @@ class AgentService:
         self._model_path = model_path
         self._env_file = env_file
         self._conn_factory = conn_factory
+        self._use_intent = use_intent
+        self._intent_bundle: Optional[dict] = None
+        self._intent_tried = False
         self._tables_ready = False
         self._agents: dict[str, ChatAgent] = {}
         self._locks: dict[str, threading.Lock] = {}
@@ -130,6 +138,21 @@ class AgentService:
         except Exception as exc:  # not ready is a normal state, never an error for the chat
             log.warning("Component 1 is not ready: %s", exc)
             return False
+
+    def _get_intent_bundle(self) -> Optional[dict]:
+        """The decision-intent model, loaded once. None means "not used", and nothing else changes."""
+        if not self._use_intent or self._intent_tried:
+            return self._intent_bundle
+        self._intent_tried = True
+        try:
+            if Path(INTENT_MODEL_PATH).exists():
+                self._intent_bundle = load_intent_model(INTENT_MODEL_PATH)
+                log.info("Component 1 loaded the decision-intent model")
+            else:
+                log.warning("Component 1 intent model not found; run: python -m component1.intent.train")
+        except Exception:
+            log.warning("Component 1 could not load the intent model", exc_info=True)
+        return self._intent_bundle
 
     def _open(self):
         if self._conn_factory is None:
@@ -158,7 +181,8 @@ class AgentService:
                     for saved in list_agent_messages(conn, team_id):
                         d = saved["details"]
                         buddy.restore(d.get("keys", []), d.get("at", 0.0), d.get("asked", False))
-                self._agents[team_id] = ChatAgent(team_id, self._bundle, self._llm, store=store, buddy=buddy)
+                self._agents[team_id] = ChatAgent(team_id, self._bundle, self._llm, store=store, buddy=buddy,
+                                                  intent_bundle=self._get_intent_bundle())
                 self._locks[team_id] = threading.Lock()
                 self._seen[team_id] = set()
             return self._agents[team_id], self._locks[team_id], self._seen[team_id]
