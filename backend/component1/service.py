@@ -174,9 +174,25 @@ class AgentService:
                 details={"keys": keys, "asked": agent.buddy.last_step_asked, "at": now},
             )
         try:   # last on purpose: Component 2's three-value row must never undo the work above
-            mirror_old_blueprint(conn, team_id, agent.store.state)
+            changed = mirror_old_blueprint(conn, team_id, agent.store.state)
         except Exception:
             log.warning("Component 1 could not update the blueprints row for team %s", team_id, exc_info=True)
+            return
+        if not changed:
+            return
+        try:   # keep Component 2's drift result in step with the row just updated
+            if conn.execute("SELECT 1 FROM activities WHERE team_id = ? LIMIT 1", (team_id,)).fetchone():
+                from buddy.sync import analyse_team     # called the same way the app's own blueprint save does
+                analyse_team(conn, team_id)
+                conn.commit()
+        except Exception:
+            log.warning("Component 1 could not refresh Component 2's drift check for team %s", team_id, exc_info=True)
+            rollback = getattr(getattr(conn, "raw", None), "rollback", None)
+            if rollback:
+                try:
+                    rollback()
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------ calls
     def handle_chat_message(
