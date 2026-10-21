@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from component2.anonymise import MemberResolver, make_code
+from component2.api.contract import clean_plan
 from component2.api.service import _labels_for_team
 from component2.classify.keyword_baseline import classify
 from component2.collect.extract_repos import clone_repo, extract_commits, extract_notebooks, force_delete, save_json
@@ -167,7 +168,7 @@ def label_team(conn, team_id):
 
 def blueprint_plan(conn, team_id):
     bp = one_as_dict(conn.execute("SELECT target, algorithm, metric FROM blueprints WHERE team_id = ?", (team_id,)))
-    return {d: (bp or {}).get(d) or None for d in ("target", "algorithm", "metric")}
+    return clean_plan(bp)
 
 
 def analyse_team(conn, team_id, days=30):

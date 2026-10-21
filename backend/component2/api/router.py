@@ -3,7 +3,7 @@ Step 5a: Component 2's web API (FR08). All addresses start with /c2.
 
   GET /c2/health                          -> is it running?
   GET /c2/teams                           -> which teams have data
-  GET /c2/teams/{team_id}/summary         -> full output for C3 + C4 (agreed JSON)
+  GET /c2/teams/{team_id}/summary         -> full output for C3 + C4 (contract: api/contract.py)
   GET /c2/teams/{team_id}/drift           -> drift only
   GET /c2/teams/{team_id}/members         -> role vectors + role history
   GET /c2/teams/{team_id}/stages/daily    -> activity per stage per day (for C3)
@@ -50,7 +50,10 @@ def teams():
 def summary(team_id: str, days: int = Query(30, ge=1, le=365, description="Size of the recent window in days")):
     with db() as conn:
         _known_team(conn, team_id)
-        return service.team_summary(conn, team_id, days)
+        result = service.team_summary(conn, team_id, days)
+    if result is None:          # only chat so far: nothing to break into stages until the repo is synced
+        raise HTTPException(status_code=404, detail=f"Team '{team_id}' has no repository activity yet")
+    return result
 
 
 @router.get("/teams/{team_id}/drift")

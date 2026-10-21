@@ -12,6 +12,8 @@ For each team and each blueprint decision (target / algorithm / metric):
 
 If a team has no blueprint file (public GitHub repos don't), one is INFERRED
 from the first 40% of its timeline: "what they did early on = what they planned".
+A blueprint file that can't be read is NOT replaced: every decision is reported as 'no_plan'
+until someone fixes it (api/contract.py describes what a valid blueprint looks like).
 
 Run from backend:
     python -m component2.drift.detect_drift            (all teams, last 30 days of each)
@@ -22,6 +24,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
+from component2.api.contract import clean_plan
 from component2.config import BLUEPRINT_DIR
 from component2.db import connect, save_drift
 from component2.drift.mentions import count_mentions, find_mentions, normalise_target
@@ -59,8 +62,12 @@ def texts_of(rows):
 def load_or_infer_blueprint(team_id, rows):
     path = BLUEPRINT_DIR / f"{team_id}.json"
     if path.exists():
-        bp = json.loads(path.read_text(encoding="utf-8"))
-        return {d: (bp.get(d) or {}).get("name") for d in DIMENSIONS}, "file"
+        try:
+            bp = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print(f"WARNING: {path.name} is not valid JSON - drift reported as 'no_plan' until it is fixed")
+            return clean_plan(None), "invalid_file"
+        return clean_plan(bp if isinstance(bp, dict) else None), "file"
 
     early = rows[: max(1, int(len(rows) * EARLY_SHARE))]
     seen = count_mentions(texts_of(early))

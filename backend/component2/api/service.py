@@ -8,6 +8,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
+from component2.api.contract import CONTRACT_VERSION, data_status
 from component2.config import STAGES
 
 LAGGING_SHARE = 0.05          # a stage with < 5% of recent work is "lagging" (agree with C4)
@@ -113,16 +114,21 @@ def team_summary(conn, team_id, days=30, roster=()):
     if window is None:
         return None
     lagging = [s for s, share in shares.items() if share < LAGGING_SHARE]
+    drift_part, member_part = drift(conn, team_id), members(conn, team_id, roster)
+    missing = [name for name, empty in (("stage_labels", not _labels_for_team(conn, team_id)),
+                                        ("drift", not drift_part["dimensions"]),
+                                        ("roles", not any(m["role_trend"] for m in member_part))) if empty]
     return {
         "component": "C2",
-        "version": "1.0",
+        "version": CONTRACT_VERSION,
         "team_id": team_id,
         "generated_at": _now(),
         "window": window,
         "stage_breakdown": shares,
         "lagging_stages": lagging,
-        "drift": drift(conn, team_id),
-        "members": members(conn, team_id, roster),
+        "drift": drift_part,
+        "members": member_part,
+        "data_status": data_status(window["end"], missing),
     }
 
 # ---------- Role snapshots over different time windows ----------
