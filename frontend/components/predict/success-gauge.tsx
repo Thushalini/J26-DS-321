@@ -1,7 +1,7 @@
 import { IconArrowDown, IconArrowUp } from "@/components/icons"
 import { StatusBadge } from "@/components/predict/status-badge"
 import { formatPercent, formatSigned } from "@/lib/format"
-import { gauge, predictCopy, scoreMax, sparkline, statusLabels } from "@/lib/predict/config"
+import { gauge, pointsDecimals, predictCopy, scoreMax, sparkline, statusLabels } from "@/lib/predict/config"
 import { getStatusLevel } from "@/lib/predict/status"
 
 const copy = predictCopy.probability
@@ -66,7 +66,7 @@ function Sparkline({ values }: { values: number[] }) {
 
 export function SuccessGauge({ probability, history }: { probability: number; history: number[] }) {
   const previous = history[history.length - 2]
-  const delta = previous === undefined ? 0 : probability - previous
+  const delta = previous === undefined ? 0 : Number((probability - previous).toFixed(pointsDecimals))
   const DeltaIcon = delta < 0 ? IconArrowDown : IconArrowUp
   const level = getStatusLevel(probability)
 

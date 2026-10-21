@@ -5,6 +5,7 @@ export type Factor = {
   label: string
   contribution: number
   detail: string
+  measured?: boolean
 }
 
 export type ForecastPoint = {
@@ -45,6 +46,40 @@ export type Prediction = {
   readiness: {
     score: number
     areas: ReadinessArea[]
-  }
+  } | null
   recommendations: Recommendation[]
+  enoughData: boolean
+  signalsFromTeam?: number
+  totalSignals?: number
+  minSignals?: number
+  laggingStages?: string[]
+  weakStages?: WeakStage[]
+  changes?: PredictionChanges | null
+}
+
+export type PredictionChanges = {
+  since: string
+  probabilityChange: number
+  signals: { id: string; label: string; before: number; after: number }[]
+}
+
+export type WeakStage = {
+  stage: string
+  label: string
+  sources: ("behavior" | "issues" | "prediction" | "readiness")[]
+}
+
+export type SavedSheet = {
+  user_id: string
+  name: string
+  saved: boolean
+  uploaded_at: string | null
+}
+
+export type HelperSuggestion = {
+  stage: string
+  stage_label: string
+  member_id: string | null
+  member_name: string | null
+  reason: string
 }
