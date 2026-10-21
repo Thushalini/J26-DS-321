@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation"
 
 import { Pill } from "@/components/ui"
 import { ROLE_LABEL } from "@/lib/api"
+import { isSupervisorLayout } from "@/lib/navigation"
 import { useSession } from "@/lib/session"
 import { site } from "@/lib/site"
+import { supervisorHeaderCopy, supervisorLayout } from "@/lib/supervision"
 
 export function AppHeader() {
   const { user, teams, team, selectTeam, signOut } = useSession()
@@ -33,6 +35,34 @@ export function AppHeader() {
           </button>
         </div>
       </div>
+      {isSupervisorLayout(user?.role) ? (
+        <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2">
+          <div className="min-w-0">
+            <p className="text-xs text-muted">{supervisorHeaderCopy.currentGroup}</p>
+            <p className="truncate text-sm font-semibold">{team?.name ?? supervisorHeaderCopy.noGroup}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {teams.some((t) => t.is_research) && (
+              <select
+                aria-label={supervisorHeaderCopy.researchLabel}
+                className="max-w-36 truncate rounded-lg border border-border bg-surface px-2 py-1 text-xs"
+                value={team?.is_research ? team.team_id : ""}
+                onChange={(e) => {
+                  if (!e.target.value) return
+                  selectTeam(e.target.value)
+                  router.push(supervisorLayout.openGroupAt)
+                }}
+              >
+                <option value="">{supervisorHeaderCopy.researchPlaceholder}</option>
+                {teams.filter((t) => t.is_research).map((t) => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
+              </select>
+            )}
+            <Link href={supervisorLayout.landing} className="text-xs font-medium text-primary">
+              {supervisorHeaderCopy.myGroups}
+            </Link>
+          </div>
+        </div>
+      ) : (
       <div className="flex items-center gap-2 border-t border-border px-4 py-2">
         <label className="sr-only" htmlFor="team-picker">Team</label>
         <select
@@ -62,6 +92,7 @@ export function AppHeader() {
         </select>
         {user && <Pill tone="primary">{user.name.split(" ")[0]} · {ROLE_LABEL[team?.my_role ?? user.role]}</Pill>}
       </div>
+      )}
       {team?.anonymised && (
         <p className="border-t border-research/40 bg-research/15 px-4 py-1.5 text-xs">
           Current team · read-only, anonymised: member codes only, no names, repo link or chat

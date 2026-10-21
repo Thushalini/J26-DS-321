@@ -16,18 +16,21 @@ def _logistic_regression(seed: int):
     return make_pipeline(StandardScaler(), LogisticRegression(**config.MODEL_PARAMS["logistic_regression"], random_state=seed))
 
 
-def baselines(seed: int = config.SEED) -> dict:
+def baselines(seed: int = config.SEED, tuned: dict | None = None) -> dict:
     params = config.MODEL_PARAMS
-    return {
+    models = {
         "logistic_regression": _logistic_regression(seed),
         "random_forest": RandomForestClassifier(**params["random_forest"], random_state=seed, n_jobs=-1),
         "gradient_boosting": GradientBoostingClassifier(**params["gradient_boosting"], random_state=seed),
     }
+    for name, overrides in (tuned or {}).items():
+        models[name].set_params(**overrides)
+    return models
 
 
-def stacking(seed: int = config.SEED) -> StackingClassifier:
+def stacking(seed: int = config.SEED, tuned: dict | None = None) -> StackingClassifier:
     return StackingClassifier(
-        estimators=list(baselines(seed).items()),
+        estimators=list(baselines(seed, tuned).items()),
         final_estimator=LogisticRegression(**config.MODEL_PARAMS["logistic_regression"], random_state=seed),
         cv=config.MODEL_PARAMS["stacking_cv"],
         stack_method="predict_proba",

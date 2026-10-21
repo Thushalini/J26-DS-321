@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from buddy.router import router as app_router
 from component2.api.router import router as c2_router
+from component4.api.router import router as c4_router
 
 app = FastAPI(title="DS Team Behavioral Analytics API", version="0.1")
 
@@ -23,6 +24,7 @@ app.add_middleware(
 
 app.include_router(c2_router)
 app.include_router(app_router)      # sign-in, teams, chat, blueprint, feedback (Buddy.ds app)
+app.include_router(c4_router)       # success prediction, explanation, forecast, recommendations
 # Other components add theirs here, e.g.:
 from component3.api.router import router as c3_router
 app.include_router(c3_router)

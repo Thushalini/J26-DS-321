@@ -8,6 +8,8 @@ import { PanelReview } from "@/components/supervisor/panel-review"
 import { PastGroups } from "@/components/supervisor/past-groups"
 import { SupervisorCode } from "@/components/supervisor/supervisor-code"
 import { SupervisedGroups } from "@/components/supervisor/supervised-groups"
+import { isSupervisorLayout } from "@/lib/navigation"
+import { supervisorLayout } from "@/lib/supervision"
 import { Button, Card, Field, Notice, Pill, inputClass } from "@/components/ui"
 import { api, ROLE_LABEL, shortDate, type Team, type TeamDetail } from "@/lib/api"
 import { useSession } from "@/lib/session"
@@ -146,7 +148,11 @@ export default function TeamsPage() {
       )}
 
       {supervisor && (
-        <SupervisedGroups teams={mine} openId={team?.team_id} onOpen={selectTeam} onChanged={refreshTeams} onError={setError} />
+        <SupervisedGroups teams={mine} openId={team?.team_id} onChanged={refreshTeams} onError={setError}
+                          onOpen={(id) => {
+                            selectTeam(id)
+                            if (isSupervisorLayout(user?.role)) router.push(supervisorLayout.openGroupAt)
+                          }} />
       )}
 
       {supervisor && <PanelReview onError={setError} />}
@@ -164,7 +170,7 @@ export default function TeamsPage() {
       </Card>
       )}
 
-      {detail && (
+      {detail && !isSupervisorLayout(user?.role) && (
         <Card title={detail.name} note={detail.is_research ? detail.label : detail.anonymised ? "Anonymised, read-only" : `Your role: ${ROLE_LABEL[detail.my_role]}`}>
           <div className="flex flex-col gap-4">
             {detail.join_code && (
@@ -261,7 +267,7 @@ export default function TeamsPage() {
         </Card>
       )}
 
-      {research.length > 0 && (
+      {research.length > 0 && !isSupervisorLayout(user?.role) && (
         <Card title="Research dataset (Phase 1)"
               note="16 anonymised public GitHub team repositories with simulated chat. The evaluation results (Kappa, F1, drift test) come from these. Read-only.">
           <ul className="flex flex-col gap-2">

@@ -2,15 +2,17 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { navItems } from "@/lib/navigation"
+import { navItemsFor } from "@/lib/navigation"
+import { useSession } from "@/lib/session"
 
 export function BottomNav() {
   const pathname = usePathname()
+  const { user } = useSession()
 
   return (
     <nav className="sticky bottom-0 border-t border-border bg-surface">
       <ul className="flex">
-        {navItems.map((item) => {
+        {navItemsFor(user?.role).map((item) => {
           const active = pathname.startsWith(item.href)
           return (
             <li key={item.id} className="flex-1">

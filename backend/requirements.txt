@@ -24,4 +24,4 @@ google-genai>=2.31
 
 shap>=0.47
 matplotlib>=3.8
-pytest>=8.0
+pypdf>=5.0
