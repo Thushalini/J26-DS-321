@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..checks.plan_checks import record_checks
 from ..common.events import EventStore
 from ..common.schema import FieldName, FieldStatus, Provenance, SourceType
 from ..pipeline import judge_field
@@ -54,4 +55,6 @@ def accept_candidate(
         text_span=f"Accepted from {candidate.source_label}",
     )
     store.update_field(name, candidate.value, FieldStatus.KNOWN, 0.5, acceptance, EXTRACTOR_ACTOR)
-    return judge_field(store, bundle, candidate.field)
+    result = judge_field(store, bundle, candidate.field)
+    record_checks(store)              # an accepted value can make the plan fit, or stop fitting
+    return result

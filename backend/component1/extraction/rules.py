@@ -313,6 +313,25 @@ def rule_items(message: str) -> list[ExtractedItem]:
     return items
 
 
+_CANONICAL = {"algorithm": _ALGORITHMS, "metric": _METRICS, "task": _TASK_TYPES, "resource": _RESOURCES}
+
+
+def canonical_names(kind: str, text: Optional[str]) -> list[str]:
+    """The known names in a value, in standard spelling: canonical_names("algorithm", "an xgboost model")
+    -> ["XGBoost"]. kind is algorithm, metric, task or resource. Empty if none is recognised."""
+    if not text:
+        return []
+    found, taken = [], []
+    if kind == "task":       # "logistic regression" is an algorithm, not the task "regression"
+        taken = [(m.start(), m.end()) for _, p in _ALGORITHMS for m in p.finditer(text)]
+    for canonical, pattern in _CANONICAL[kind]:
+        for m in pattern.finditer(text):
+            if not _overlaps(m.start(), m.end(), taken):
+                found.append((m.start(), canonical))
+                break
+    return [name for _, name in sorted(found)]
+
+
 def looks_like_planning(message: str) -> bool:
     """True if the message mentions planning words, so asking the LLM is worth the wait."""
     return bool(PLANNING_CUES.search(message or ""))

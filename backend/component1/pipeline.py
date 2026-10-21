@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any, Mapping, Optional
 
 from .agent.signals import CONFLICT, FOUND, GAP, SAVED, Signal
+from .checks.plan_checks import check_signals, record_checks, run_checks
 from .common.events import EventStore
 from .common.schema import BASE_WEIGHT, FieldName, FieldStatus, Provenance, SourceType
 from .extraction.extractor import LLMFn, apply_message
@@ -64,6 +65,7 @@ def state_signals(store: EventStore, candidates: Optional[Mapping[str, Any]] = N
     for name in FieldName:
         if state.fields[name].status == FieldStatus.CONFLICTING:
             signals.append(Signal(CONFLICT, name.value, _conflict_values(store, name.value)))
+    signals.extend(check_signals(run_checks(state, store.events)))    # parts of the plan that do not fit
     if candidates:
         missing = [n for n in FieldName if state.fields[n].status == FieldStatus.MISSING and n.value in candidates]
         for name in sorted(missing, key=lambda n: -BASE_WEIGHT[n]):
@@ -111,6 +113,8 @@ def process_message(
     statuses: dict[str, tuple[str, float]] = {}
     for field in touched:
         statuses[field] = judge_field(store, bundle, field)
+    if touched:
+        record_checks(store)          # store pass / warning / fail when the plan changed
 
     # 2. Work out what Buddy should be told.
     signals: list[Signal] = []

@@ -16,8 +16,9 @@ from .common.events import EventStore
 from .common.schema import FieldName, FieldStatus
 from .documents.candidates import Candidate, group_candidates
 from .gaps.gaps import check_completeness, ready_gaps
+from .checks.plan_checks import run_checks
 from .history import recent_changes
-from .state.normalize import normalize_value
+from .timeline.current import first_said
 from .timeline.dates import resolve
 from .timeline.milestones import milestone_list
 from .state.features import mentions_for_field
@@ -40,19 +41,6 @@ def confidence_band(confidence: float) -> str:
     if confidence >= 0.6:
         return "Medium"
     return "Low"
-
-
-def _first_said(events: list, value: Optional[str]):
-    """When the field's current timeline value was first said. "8 weeks" counts from that moment."""
-    if not value:
-        return None
-    wanted = normalize_value(value)
-    for e in sorted(events, key=lambda e: e.version):
-        p = e.payload
-        if (getattr(e.event_type, "value", e.event_type) == "field_updated" and e.actor == "extractor"
-                and p.get("field") == FieldName.TIMELINE.value and normalize_value(p.get("new_value") or "") == wanted):
-            return e.created_at
-    return None
 
 
 def plan_from_events(
@@ -95,7 +83,7 @@ def plan_from_events(
                 for p in f.provenance
             ]
         if name == FieldName.TIMELINE:
-            item["timeline"] = resolve(f.value, said_on=_first_said(store.events, f.value))
+            item["timeline"] = resolve(f.value, said_on=first_said(store.events, f.value))
         if suggestions is not None:
             item["suggestions"] = [c.as_dict(include_evidence)
                                    for c in suggestions.get(name.value, [])[:MAX_SUGGESTIONS_PER_FIELD]]
@@ -120,6 +108,8 @@ def plan_from_events(
         "evidence_included": include_evidence,
         "recent_changes": recent_changes(events, RECENT_CHANGES, include_evidence, hide_documents),
         "milestones": milestone_list(state),
+        "checks": [r.as_dict() for r in run_checks(state, store.events)],
+        "feasibility": state.feasibility,
         "documents": documents,
         "note": NOTE,
     }
@@ -137,3 +127,12 @@ def build_plan(conn: Any, team_id: str, include_evidence: bool = False,
         documents = [{k: d.get(k) for k in DOCUMENT_KEYS} for d in list_documents(conn, team_id)]
     return plan_from_events(team_id, load_events(conn, team_id), include_evidence, suggestions, documents,
                             hide_documents=not include_documents)
+
+def blueprint_for_component4(conn: Any, team_id: str) -> dict[str, Any]:
+    """The blueprint in the shape Component 4's c1_adapter reads (fields, version, novelty_score,
+    feasibility), rebuilt from the saved events. For example, in Component 4:
+
+        from component1.plan import blueprint_for_component4
+        project = assemble(blueprint=blueprint_for_component4(conn, team_id), ...)
+    """
+    return EventStore.from_events(team_id, load_events(conn, team_id)).state.model_dump(mode="json")
