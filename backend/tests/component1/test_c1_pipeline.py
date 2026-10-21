@@ -96,7 +96,7 @@ def test_the_saved_signal_names_the_speaker_and_the_status():
 def test_gap_signals_skip_filled_fields_and_follow_importance_order():
     store = EventStore("p1")
     r = run(store, says("problem", "forecast arrivals", "forecast arrivals"), "M1", "Member_A", "we need to forecast arrivals")
-    assert [s.field for s in r.signals if s.kind == GAP] == ["objective", "dataset", "domain"]
+    assert [s.field for s in r.signals if s.kind == GAP] == ["objective", "dataset", "domain", "timeline"]
 
 
 def test_the_fields_confidence_is_the_models_probability():

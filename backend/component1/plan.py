@@ -1,4 +1,4 @@
-"""The planning blueprint as the Blueprint tab needs it: all nine fields, how settled each one
+"""The planning blueprint as the Blueprint tab needs it: all ten fields, how settled each one
 is, and what is still missing. Built from the saved events (c1_events), so it always matches
 what Buddy said in the chat.
 
@@ -16,10 +16,15 @@ from .common.events import EventStore
 from .common.schema import FieldName, FieldStatus
 from .documents.candidates import Candidate, group_candidates
 from .gaps.gaps import check_completeness, ready_gaps
+from .history import recent_changes
+from .state.normalize import normalize_value
+from .timeline.dates import resolve
+from .timeline.milestones import milestone_list
 from .state.features import mentions_for_field
 from .storage import list_doc_facts, list_documents, load_events
 
 MAX_SUGGESTIONS_PER_FIELD = 3
+RECENT_CHANGES = 10
 
 NOTE = "Confidence is the system's own estimate (High, Medium or Low). It is not a guarantee of being right."
 
@@ -37,12 +42,26 @@ def confidence_band(confidence: float) -> str:
     return "Low"
 
 
+def _first_said(events: list, value: Optional[str]):
+    """When the field's current timeline value was first said. "8 weeks" counts from that moment."""
+    if not value:
+        return None
+    wanted = normalize_value(value)
+    for e in sorted(events, key=lambda e: e.version):
+        p = e.payload
+        if (getattr(e.event_type, "value", e.event_type) == "field_updated" and e.actor == "extractor"
+                and p.get("field") == FieldName.TIMELINE.value and normalize_value(p.get("new_value") or "") == wanted):
+            return e.created_at
+    return None
+
+
 def plan_from_events(
     team_id: str,
     events: list,
     include_evidence: bool = False,
     suggestions: Optional[dict[str, list[Candidate]]] = None,
     documents: Optional[list[dict]] = None,
+    hide_documents: bool = False,
 ) -> dict[str, Any]:
     store = EventStore.from_events(team_id, events)
     state = store.state
@@ -75,6 +94,8 @@ def plan_from_events(
                 }
                 for p in f.provenance
             ]
+        if name == FieldName.TIMELINE:
+            item["timeline"] = resolve(f.value, said_on=_first_said(store.events, f.value))
         if suggestions is not None:
             item["suggestions"] = [c.as_dict(include_evidence)
                                    for c in suggestions.get(name.value, [])[:MAX_SUGGESTIONS_PER_FIELD]]
@@ -97,6 +118,8 @@ def plan_from_events(
         "next_gaps": [n.value for n in ready_gaps(state)[:3]],
         "fields": fields,
         "evidence_included": include_evidence,
+        "recent_changes": recent_changes(events, RECENT_CHANGES, include_evidence, hide_documents),
+        "milestones": milestone_list(state),
         "documents": documents,
         "note": NOTE,
     }
@@ -112,4 +135,5 @@ def build_plan(conn: Any, team_id: str, include_evidence: bool = False,
     if include_documents:
         suggestions = group_candidates(list_doc_facts(conn, team_id))
         documents = [{k: d.get(k) for k in DOCUMENT_KEYS} for d in list_documents(conn, team_id)]
-    return plan_from_events(team_id, load_events(conn, team_id), include_evidence, suggestions, documents)
+    return plan_from_events(team_id, load_events(conn, team_id), include_evidence, suggestions, documents,
+                            hide_documents=not include_documents)
