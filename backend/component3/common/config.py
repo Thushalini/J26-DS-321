@@ -10,6 +10,12 @@ TRAJECTORIES_CSV = DATA_DIR / "experiment_trajectories.csv"
 RUN_LABELS_CSV = DATA_DIR / "run_level_labels.csv"
 SPLITS_CSV = DATA_DIR / "splits.csv"
 
+# Real training runs (made by scripts/make_real_runs.py)
+REAL_DIR = DATA_DIR / "real_runs"
+REAL_TRAJECTORIES_CSV = REAL_DIR / "real_trajectories.csv"
+REAL_RUN_LABELS_CSV = REAL_DIR / "real_run_labels.csv"
+REAL_SPLITS_CSV = REAL_DIR / "real_splits.csv"
+
 ANOMALY_MODEL_PATH = MODELS_DIR / "anomaly_model.joblib"
 ROOT_CAUSE_MODEL_PATH = MODELS_DIR / "root_cause_models.joblib"
 

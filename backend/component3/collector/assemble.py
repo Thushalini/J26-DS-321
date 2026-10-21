@@ -35,8 +35,13 @@ def attach_commits(epochs, git_activity):
     return out
 
 
-def build_run(run_id, epochs, git_activity, drift_severity_score, hyperparam_tuning_logged) -> dict:
-    """Input dict for predict_live.predict_run()."""
+def build_run(run_id, epochs, git_activity, drift_severity_score, hyperparam_tuning_logged,
+              drift_source="provided") -> dict:
+    """Input dict for predict_live.predict_run().
+    drift_severity_score can be None (Component 2 has no score for the team): 0.0 is used and the
+    output says so in 'drift_source'."""
+    if drift_severity_score is None:
+        drift_severity_score, drift_source = 0.0, "default_0_no_score"
     gap = git_activity["commit_gap_days"]
     if gap is None:                                   # no commit at all before the run ended
         gap = git_activity["window_days"]
@@ -45,6 +50,7 @@ def build_run(run_id, epochs, git_activity, drift_severity_score, hyperparam_tun
         "epochs": attach_commits(epochs, git_activity),
         "context": {
             "drift_severity_score": float(drift_severity_score),
+            "drift_source": drift_source,
             "hyperparam_tuning_logged": 1 if hyperparam_tuning_logged else 0,
             "commit_gap_days": float(gap),
             "notebook_edit_freq_per_day": float(git_activity["notebook_edit_freq_per_day"]),

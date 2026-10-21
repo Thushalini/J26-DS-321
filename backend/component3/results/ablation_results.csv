@@ -1,6 +1,6 @@
-system,macro_F1,hamming_loss,detection_AUC
-Baseline A (generic rules),0.785,0.0905,0.8706
-"Baseline B (best single rule per cause, fit on train)",0.9061,0.0324,1.0
-Trained ML (full),0.9568,0.0114,0.9998
-ML without anomaly score,0.9568,0.0114,1.0
-ML without drift score,0.9568,0.0114,1.0
+system,macro_F1,hamming_loss,detection_AUC,healthy_flagged,failures_flagged
+Baseline A (generic rules),0.785,0.0905,0.8706,0.2,0.8963
+"Baseline B (best single rule per cause, fit on train)",0.8841,0.0457,0.9963,0.0,0.9926
+Trained ML (full),0.9524,0.0124,0.9913,0.0,0.9926
+ML without anomaly score,0.9568,0.0114,1.0,0.0,1.0
+ML without drift score,0.9479,0.0133,1.0,0.0,0.9852

@@ -44,8 +44,8 @@ except Exception as e:
     print(f"[component1] blueprint routes not loaded: {e}")
 
 # Other components add theirs here, e.g.:
-# from component3.api.router import router as c3_router
-# app.include_router(c3_router)
+from component3.api.router import router as c3_router
+app.include_router(c3_router)
 
 
 @app.get("/")
