@@ -23,6 +23,7 @@ from typing import Iterable, Optional
 from ..common.schema import FieldName
 from ..timeline.find import find_timeline
 from .extractor import ExtractedItem
+from .size import find_sizes
 
 # ------------------------------------------------------------------ word lists
 # canonical value -> spellings to look for (matched as whole words, any case)
@@ -284,6 +285,12 @@ def rule_items(message: str) -> list[ExtractedItem]:
     hits += _pattern_hits(message, FieldName.DOMAIN, _DOMAIN_PATTERNS, [], canonical=_domain_canonical)
     hits += _pattern_hits(message, FieldName.PROBLEM, _PROBLEM_PATTERNS, taken)
     hits += _pattern_hits(message, FieldName.OBJECTIVE, _OBJECTIVE_PATTERNS, taken)
+
+    # Dataset size: "10k rows" -> "10000 rows"
+    for words, rows in find_sizes(message):
+        start = message.find(words)
+        if not _rejected(message, start):
+            hits.append((start, start + len(words), FieldName.DATASET_SIZE, f"{rows} rows"))
 
     # Timeline: the overall deadline or length is one value like any field; milestones are extra items.
     overall, milestones = find_timeline(message)

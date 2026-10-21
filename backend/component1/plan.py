@@ -16,7 +16,8 @@ from .common.events import EventStore
 from .common.schema import FieldName, FieldStatus
 from .documents.candidates import Candidate, group_candidates
 from .gaps.gaps import check_completeness, ready_gaps
-from .checks.plan_checks import run_checks
+from .checks.plan_checks import model_judgement, run_checks
+from .extraction.size import rows_of
 from .history import recent_changes
 from .timeline.current import first_said
 from .timeline.dates import resolve
@@ -84,6 +85,8 @@ def plan_from_events(
             ]
         if name == FieldName.TIMELINE:
             item["timeline"] = resolve(f.value, said_on=first_said(store.events, f.value))
+        if name == FieldName.DATASET_SIZE:
+            item["rows"] = rows_of(f.value)
         if suggestions is not None:
             item["suggestions"] = [c.as_dict(include_evidence)
                                    for c in suggestions.get(name.value, [])[:MAX_SUGGESTIONS_PER_FIELD]]
@@ -109,6 +112,7 @@ def plan_from_events(
         "recent_changes": recent_changes(events, RECENT_CHANGES, include_evidence, hide_documents),
         "milestones": milestone_list(state),
         "checks": [r.as_dict() for r in run_checks(state, store.events)],
+        "feasibility_model": model_judgement(state, store.events),
         "feasibility": state.feasibility,
         "documents": documents,
         "note": NOTE,

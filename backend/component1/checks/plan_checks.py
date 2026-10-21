@@ -31,7 +31,10 @@ LABELS = {
     "target_fits_task": "Target fits the task",
     "compute_fits_model": "Compute fits the model",
     "timeline_fits_model": "Time fits the model",
+    "model_feasibility": "Can the team finish it? (trained model)",
 }
+MODEL_STATUS = {"feasible": "pass", "risky": "warning", "infeasible": "fail"}
+_DEFAULT = object()
 
 
 @dataclass(frozen=True)
@@ -70,7 +73,31 @@ def _has_word(text: str, words) -> bool:
     return any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", text) for w in words)
 
 
-def run_checks(state, events: Iterable = (), today: Optional[date] = None) -> list[CheckResult]:
+def model_check(judgement: dict) -> CheckResult:
+    """The trained feasibility model's verdict as a check. The wording only changes when the plan
+    does (whole weeks, not days), so Buddy does not repeat itself every day."""
+    label = judgement["label"]
+    status = MODEL_STATUS[label]
+    if status == "pass":
+        return CheckResult("model_feasibility", "plan", "pass", "")
+    reasons = "; ".join(r["text"] for r in judgement["reasons"])
+    changes = [a["change"] for a in judgement["alternatives"]]
+    detail = f"it looks {label} to the feasibility model" + (f" (main reasons: {reasons})" if reasons else "") + "."
+    if changes:
+        detail += f" Changes that would help: {_or(changes)}."
+    return CheckResult("model_feasibility", "plan", status, detail, tuple(changes))
+
+
+def model_judgement(state, events: Iterable = (), today: Optional[date] = None, bundle=_DEFAULT) -> Optional[dict]:
+    """The trained model's full verdict (with probabilities), or None if the plan is not far enough."""
+    from ..feasibility.predict import default_bundle, judge_blueprint
+    return judge_blueprint(default_bundle() if bundle is _DEFAULT else bundle, state, list(events), today)
+
+
+def run_checks(state, events: Iterable = (), today: Optional[date] = None,
+               feasibility_bundle=_DEFAULT) -> list[CheckResult]:
+    """All checks. feasibility_bundle: the trained model to use (default: the saved one; None = skip it)."""
+    events = list(events)
     task = _first("task", _value(state, FieldName.TASK_TYPE))
     metric = _first("metric", _value(state, FieldName.EVALUATION_METRIC))
     algorithm = _first("algorithm", _value(state, FieldName.ALGORITHM))
@@ -137,6 +164,10 @@ def run_checks(state, events: Iterable = (), today: Optional[date] = None) -> li
                     f"Consider a simpler baseline such as {_or(baselines)} first.", baselines))
             else:
                 results.append(CheckResult("timeline_fits_model", "algorithm", "pass", ""))
+
+    judgement = model_judgement(state, events, today, feasibility_bundle)
+    if judgement is not None:
+        results.append(model_check(judgement))
     return results
 
 
@@ -151,9 +182,9 @@ def check_signals(results: Iterable[CheckResult]) -> list[Signal]:
     return [Signal(CHECK, r.field, r.alternatives, detail=r.detail) for r in results if r.status != "pass"]
 
 
-def record_checks(store: EventStore, today: Optional[date] = None) -> list[CheckResult]:
+def record_checks(store: EventStore, today: Optional[date] = None, feasibility_bundle=_DEFAULT) -> list[CheckResult]:
     """Run the checks and store the results in the blueprint when they changed."""
-    results = run_checks(store.state, store.events, today)
+    results = run_checks(store.state, store.events, today, feasibility_bundle)
     now = feasibility_of(results)
     before = store.state.feasibility or {}
     if now != before:

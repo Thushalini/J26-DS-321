@@ -29,6 +29,7 @@ class FieldName(str, Enum):
     EVALUATION_METRIC = "evaluation_metric"
     RESOURCES = "resources"
     TIMELINE = "timeline"      # the overall deadline or project length; named milestones are decisions
+    DATASET_SIZE = "dataset_size"   # how many rows the dataset has, e.g. "10000 rows"
 
 
 class FieldStatus(str, Enum):
@@ -70,6 +71,7 @@ DEPENDS_ON: dict[FieldName, list[FieldName]] = {
     FieldName.EVALUATION_METRIC: [FieldName.TASK_TYPE],
     FieldName.RESOURCES: [FieldName.ALGORITHM],
     FieldName.TIMELINE: [FieldName.PROBLEM],   # worth asking once the team knows what it is building
+    FieldName.DATASET_SIZE: [FieldName.DATASET],
 }
 
 BASE_WEIGHT: dict[FieldName, int] = {
@@ -82,6 +84,7 @@ BASE_WEIGHT: dict[FieldName, int] = {
     FieldName.ALGORITHM: 6,
     FieldName.EVALUATION_METRIC: 6,
     FieldName.TIMELINE: 5,                     # after the core plan, before compute resources
+    FieldName.DATASET_SIZE: 4,                 # needed for the feasibility check
     FieldName.RESOURCES: 3,
 }
 
