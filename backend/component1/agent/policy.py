@@ -71,6 +71,9 @@ def found_text(signal: Signal) -> str:
 
 
 def gap_text(signal: Signal) -> str:
+    if signal.field == "timeline":
+        return ("I noticed there is no decision yet on the timeline. When is the deadline, "
+                "or how many weeks does the team have?")
     return f"I noticed there is no decision yet on the {field_label(signal.field)}. Could someone confirm what it will be?"
 
 

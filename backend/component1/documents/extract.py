@@ -18,6 +18,7 @@ from typing import Iterable, Optional
 
 from ..extraction.extractor import LLMFn, extract_items
 from ..extraction.rules import looks_like_planning, rule_items
+from ..timeline.dates import MILESTONE_PREFIX
 from .chunk import Chunk, split_sentences
 
 log = logging.getLogger("component1")
@@ -66,6 +67,8 @@ def extract_document(
                 log.warning("Document chunk %d: language model failed (%s)", chunk.number, type(exc).__name__)
                 items = []
         for item in items:
+            if item.field.value == "timeline" and item.value.lower().startswith(MILESTONE_PREFIX):
+                continue        # document milestones are not suggested yet; only the overall timeline is
             facts.append(DocFact(chunk.number, chunk.page, item.field.value, item.value.strip(),
                                  item.span, item.hedged, method))
     return facts

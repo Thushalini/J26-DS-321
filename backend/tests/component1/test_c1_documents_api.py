@@ -3,6 +3,7 @@
 Sign-in is replaced by a fixed test user; the app tables are stand-ins with the real column
 names that the access checks read. All names and text are invented.
 """
+import json
 import sqlite3
 
 import pytest
@@ -172,3 +173,35 @@ def test_removing_a_document_removes_its_open_suggestions(client):
     assert client.delete(f"/app/teams/t1/documents/{doc_id}").status_code == 200
     assert field(client.get("/app/teams/t1/plan").json(), "algorithm")["suggestions"] == []
     assert client.delete(f"/app/teams/t1/documents/{doc_id}").status_code == 404
+
+
+# ---------------------------------------------------------------- history
+def test_the_history_route_shows_who_changed_what_with_quotes_only_for_the_team(client):
+    hook._service.handle_chat_message("t1", "m1", "M-1", "Let's use XGBoost for this.", "2026-10-21T10:00:00Z")
+    upload(client)
+    fact_id = field(client.get("/app/teams/t1/plan").json(), "algorithm")["suggestions"][0]["fact_id"]
+    client.post(f"/app/teams/t1/plan/candidates/{fact_id}/accept")
+
+    r = client.get("/app/teams/t1/plan/history?field=algorithm").json()
+    assert r["total"] == 2
+    newest, first = r["entries"]
+    assert first["kind"] == "proposed" and first["value"] == "XGBoost" and first["text"]
+    assert newest["kind"] == "accepted_document" and newest["value"] == "ARIMA"
+    assert newest["status_after"] == "conflicting"                      # chat said XGBoost, the document ARIMA
+
+    plan = client.get("/app/teams/t1/plan").json()
+    assert plan["recent_changes"][0]["kind"] == "accepted_document"
+
+    sup = as_(client, "supervisor").get("/app/teams/t1/plan/history").json()
+    assert sup["total"] == 2 and all("text" not in e for e in sup["entries"])
+
+    ex = as_(client, "examiner").get("/app/teams/t1/plan/history").json()
+    assert all(e["document"] is None for e in ex["entries"])
+    assert "Plan.txt" not in json.dumps(ex)
+
+
+def test_the_history_route_rejects_unknown_fields_and_outsiders(client):
+    assert client.get("/app/teams/t1/plan/history?field=nonsense").status_code == 404
+    assert as_(client, "outsider").get("/app/teams/t1/plan/history").status_code == 403
+    assert client.get("/app/teams/r1/plan/history").status_code == 403          # students: research teams are hidden
+    assert as_(client, "supervisor").get("/app/teams/r1/plan/history").json()["available"] is False

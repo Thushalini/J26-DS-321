@@ -21,6 +21,7 @@ import re
 from typing import Iterable, Optional
 
 from ..common.schema import FieldName
+from ..timeline.find import find_timeline
 from .extractor import ExtractedItem
 
 # ------------------------------------------------------------------ word lists
@@ -284,6 +285,13 @@ def rule_items(message: str) -> list[ExtractedItem]:
     hits += _pattern_hits(message, FieldName.PROBLEM, _PROBLEM_PATTERNS, taken)
     hits += _pattern_hits(message, FieldName.OBJECTIVE, _OBJECTIVE_PATTERNS, taken)
 
+    # Timeline: the overall deadline or length is one value like any field; milestones are extra items.
+    overall, milestones = find_timeline(message)
+    for found in overall:
+        start = message.find(found.span)
+        if not _rejected(message, start):
+            hits.append((start, start + len(found.span), FieldName.TIMELINE, found.value))
+
     # One value per field per message, in the order they appear.
     by_field: dict[FieldName, list[tuple[int, int, str]]] = {}
     for start, end, field, value in sorted(hits, key=lambda h: h[0]):
@@ -297,6 +305,11 @@ def rule_items(message: str) -> list[ExtractedItem]:
         start, end, value = found[0]
         several = len({v.lower() for _, _, v in found}) > 1
         items.append(ExtractedItem(field=field, value=value, span=message[start:end], hedged=hedged or several))
+    seen = set()
+    for found in milestones:                     # each named milestone once, even if repeated
+        if found.value.lower() not in seen:
+            seen.add(found.value.lower())
+            items.append(ExtractedItem(field=FieldName.TIMELINE, value=found.value, span=found.span, hedged=hedged))
     return items
 
 

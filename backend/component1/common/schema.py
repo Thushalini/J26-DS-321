@@ -28,6 +28,7 @@ class FieldName(str, Enum):
     ALGORITHM = "algorithm"
     EVALUATION_METRIC = "evaluation_metric"
     RESOURCES = "resources"
+    TIMELINE = "timeline"      # the overall deadline or project length; named milestones are decisions
 
 
 class FieldStatus(str, Enum):
@@ -68,6 +69,7 @@ DEPENDS_ON: dict[FieldName, list[FieldName]] = {
     FieldName.ALGORITHM: [FieldName.TASK_TYPE],
     FieldName.EVALUATION_METRIC: [FieldName.TASK_TYPE],
     FieldName.RESOURCES: [FieldName.ALGORITHM],
+    FieldName.TIMELINE: [FieldName.PROBLEM],   # worth asking once the team knows what it is building
 }
 
 BASE_WEIGHT: dict[FieldName, int] = {
@@ -79,6 +81,7 @@ BASE_WEIGHT: dict[FieldName, int] = {
     FieldName.TASK_TYPE: 8,
     FieldName.ALGORITHM: 6,
     FieldName.EVALUATION_METRIC: 6,
+    FieldName.TIMELINE: 5,                     # after the core plan, before compute resources
     FieldName.RESOURCES: 3,
 }
 

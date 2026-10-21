@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from ..common.events import EventStore
 from ..common.schema import Event, FieldName, FieldStatus, Provenance, SourceType
+from ..timeline.dates import MILESTONE_PREFIX
+from ..timeline.find import standard_timeline_value
+from ..timeline.milestones import record_milestone
 
 LLMFn = Callable[[str], str]  # takes a prompt, returns the model's reply text
 
@@ -31,7 +34,10 @@ Fields you may use:
 - task_type: for example classification, regression or forecasting
 - algorithm: the model or method
 - evaluation_metric: how they measure results
-- resources: compute, time or budget
+- resources: compute or budget
+- timeline: the project's overall deadline or length, for example "8 weeks" or "deadline 15 December".
+  For a NAMED milestone (demo, presentation, mid evaluation, ...) use the value
+  "milestone: <name>, <date>", for example "milestone: Demo, 20 November".
 
 Rules:
 - Do not guess. If the message says nothing about a field, leave it out.
@@ -101,6 +107,8 @@ def extract_items(message: str, llm: LLMFn) -> list[ExtractedItem]:
             continue
         if item.span not in message:  # the quoted words must really be in the message
             continue
+        if item.field == FieldName.TIMELINE:       # "eight weeks" and "8 weeks" must be one value
+            item = item.model_copy(update={"value": standard_timeline_value(item.value)})
         kept.append(item)
     return kept
 
@@ -113,9 +121,16 @@ def apply_message(
     llm: LLMFn,
     timestamp: Optional[datetime] = None,
 ) -> list[Event]:
-    """Extract facts from one message and write them into the blueprint."""
+    """Extract facts from one message and write them into the blueprint.
+
+    Returns the field updates only. Named milestones are recorded as timeline decisions instead
+    (timeline/milestones.py), so they never compete with the overall deadline.
+    """
     events: list[Event] = []
     for item in extract_items(message, llm):
+        if item.field == FieldName.TIMELINE and item.value.lower().startswith(MILESTONE_PREFIX):
+            record_milestone(store, item.value, item.span, speaker, message_id)
+            continue
         provenance = Provenance(
             source_type=SourceType.CHAT,
             source_id=message_id,
