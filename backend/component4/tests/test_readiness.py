@@ -27,4 +27,4 @@ def test_each_found_criterion_names_the_file_that_proved_it():
 
 def test_missing_criteria_are_listed_in_the_reason():
     versioning = next(a for a in assess(["README.md"])["areas"] if a["id"] == "versioning")
-    assert versioning["score"] == 0 and "dependencies listed" in versioning["reason"]
+    assert versioning["score"] == 0 and "experiments tracked" in versioning["reason"]

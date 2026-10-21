@@ -44,6 +44,16 @@ export function PredictionState({ loading, error, onRetry }: { loading: boolean;
   return loading ? <p className="text-sm text-muted">{live.loading}</p> : null
 }
 
+function RangeNote({ prediction }: { prediction: Prediction }) {
+  const range = prediction.probabilityRange
+  if (!range || range.high - range.low < predictCopy.probability.rangeMinWidth) return null
+  return (
+    <p className="mt-3 text-xs text-muted">
+      {fill(predictCopy.probability.range, { low: Math.round(range.low), high: Math.round(range.high) })}
+    </p>
+  )
+}
+
 function ChangesNote({ prediction }: { prediction: Prediction }) {
   const signals = prediction.changes?.signals ?? []
   if (!prediction.changes || signals.length === 0) return null
@@ -59,6 +69,7 @@ export function ProbabilityCard({ prediction }: { prediction: Prediction }) {
   return (
     <SectionCard title={predictCopy.probability.title} description={predictCopy.probability.description}>
       <SuccessGauge probability={prediction.probability} history={prediction.history} />
+      <RangeNote prediction={prediction} />
       <ChangesNote prediction={prediction} />
     </SectionCard>
   )
