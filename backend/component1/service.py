@@ -14,6 +14,12 @@ with FastAPI BackgroundTasks). Without a connection it keeps everything in memor
 
 If use_intent=True, the decision-intent model is loaded once and handed to each team's agent,
 so a message like "ok, lock that in" counts as one more person agreeing. Off by default.
+
+Documents (needs a database connection):
+    process_document(team_id, doc_id, filename, data)   read an upload and store its suggestions
+    accept_suggestion(team_id, fact_id, accepted_by)     put a suggestion into the blueprint
+    dismiss_suggestion(team_id, fact_id, dismissed_by)   never suggest that value again
+Like handle_chat_message, none of them raises.
 """
 from __future__ import annotations
 
@@ -29,6 +35,10 @@ from typing import Any, Callable, Optional, Union
 from .agent.chat_agent import ChatAgent
 from .agent.policy import Buddy, BuddyConfig
 from .common.events import EventStore
+from .documents.candidates import best_candidates, find_group
+from .documents.chunk import chunk_pages
+from .documents.extract import extract_document
+from .documents.parse import DocumentError, parse_document
 from .extraction.extractor import LLMFn
 from .extraction.gemini_provider import load_env_file
 from .extraction.llm import build_extractor_llm
@@ -36,13 +46,19 @@ from .intent.predict import MODEL_PATH as INTENT_MODEL_PATH, load_model as load_
 from .state.predict import MODEL_PATH, load_model
 from .storage import (
     ensure_c1_tables,
+    fail_document,
+    finish_document,
     list_agent_messages,
+    list_doc_facts,
     load_events,
     mark_processed,
     mirror_old_blueprint,
     save_agent_message,
     save_new_events,
+    set_facts_status,
 )
+
+READ_FAILED = "Something went wrong while reading this document. Please try uploading it again."
 
 log = logging.getLogger("component1")
 
@@ -181,15 +197,32 @@ class AgentService:
                     for saved in list_agent_messages(conn, team_id):
                         d = saved["details"]
                         buddy.restore(d.get("keys", []), d.get("at", 0.0), d.get("asked", False))
-                self._agents[team_id] = ChatAgent(team_id, self._bundle, self._llm, store=store, buddy=buddy,
-                                                  intent_bundle=self._get_intent_bundle())
+                agent = ChatAgent(team_id, self._bundle, self._llm, store=store, buddy=buddy,
+                                  intent_bundle=self._get_intent_bundle())
+                if conn is not None:
+                    self._load_candidates(conn, agent)
+                self._agents[team_id] = agent
                 self._locks[team_id] = threading.Lock()
                 self._seen[team_id] = set()
             return self._agents[team_id], self._locks[team_id], self._seen[team_id]
 
+    @staticmethod
+    def _load_candidates(conn, agent: ChatAgent) -> None:
+        """Give the agent the team's open document suggestions. A failure only means no suggestions."""
+        try:
+            agent.candidates = best_candidates(list_doc_facts(conn, agent.project_id))
+            if agent.candidates:
+                agent.notice_documents()     # open suggestions are worth asking about, even before chat
+        except Exception:
+            log.warning("Component 1 could not load document suggestions for team %s", agent.project_id,
+                        exc_info=True)
+
     def _persist(self, conn, team_id: str, agent: ChatAgent, replies: list[str],
                  ts_text: str, now: float, after_msg_id: Optional[str]) -> None:
         save_new_events(conn, team_id, agent.store.events)
+        while agent.accepted:                  # suggestions accepted in the chat or on the Blueprint tab
+            candidate, accepted_by = agent.accepted.pop(0)
+            set_facts_status(conn, team_id, candidate.fact_ids, "accepted", decided_by=accepted_by)
         for reply in replies:
             keys = [list(k) for k in agent.buddy.last_step_keys]
             save_agent_message(
@@ -258,6 +291,109 @@ class AgentService:
         except Exception:
             log.exception("Component 1 failed on message %s (the chat is not affected)", message_id)
             return []
+        finally:
+            self._close(conn)
+
+    # -------------------------------------------------------- documents
+    def process_document(self, team_id: str, doc_id: str, filename: str, data: bytes) -> dict:
+        """Read an uploaded document and store its suggestions. Run it in the background.
+
+        The document row must exist already (storage.create_document). Returns a short summary;
+        the same outcome is saved on the row, so the screen can show it. Never raises.
+        """
+        conn = None
+        try:
+            conn = self._open()
+            if conn is None:
+                return {"status": "failed", "error": "Documents need a database connection."}
+            try:
+                pages = parse_document(filename, data)
+            except DocumentError as exc:
+                fail_document(conn, doc_id, str(exc))
+                return {"status": "failed", "error": str(exc)}
+            chunks = chunk_pages(pages)
+            ready = self._ensure_ready()               # not ready = rules only, never a failed upload
+            fallback = getattr(self._llm, "fallback", None) if ready else None
+            facts = extract_document(chunks, fallback_llm=fallback)
+            finish_document(conn, doc_id, chunks, facts, pages=len(pages))
+            if ready:                                  # let Buddy know about the new suggestions
+                agent, lock, _ = self._team(team_id, conn)
+                with lock:
+                    self._load_candidates(conn, agent)
+            return {"status": "done", "chunks": len(chunks), "facts": len(facts)}
+        except Exception:
+            log.exception("Component 1 could not process document %s", doc_id)
+            try:
+                if conn is not None:
+                    fail_document(conn, doc_id, READ_FAILED)
+            except Exception:
+                log.warning("Component 1 could not mark document %s as failed", doc_id, exc_info=True)
+            return {"status": "failed", "error": READ_FAILED}
+        finally:
+            self._close(conn)
+
+    def accept_suggestion(self, team_id: str, fact_id: str, accepted_by: str) -> dict:
+        """Put a document suggestion into the blueprint. accepted_by is the member's code."""
+        conn = None
+        try:
+            if not self._ensure_ready():
+                return {"ok": False, "error": "Component 1 is not ready yet. Please try again shortly."}
+            conn = self._open()
+            if conn is None:
+                return {"ok": False, "error": "Documents need a database connection."}
+            agent, lock, _ = self._team(team_id, conn)
+            with lock:
+                group = find_group(list_doc_facts(conn, team_id), fact_id)
+                if group is None:
+                    return {"ok": False, "error": "This suggestion has already been accepted or dismissed."}
+                label, probability = agent.accept(group, accepted_by)
+                now = time.time()
+                self._persist(conn, team_id, agent, [], _ts_text(now), now, None)
+                self._load_candidates(conn, agent)
+                return {"ok": True, "field": group.field, "value": group.value, "status": label}
+        except Exception:
+            log.exception("Component 1 could not accept suggestion %s", fact_id)
+            return {"ok": False, "error": "The suggestion could not be saved. Please try again."}
+        finally:
+            self._close(conn)
+
+    def dismiss_suggestion(self, team_id: str, fact_id: str, dismissed_by: str) -> dict:
+        """Dismiss a suggestion. The same value is never suggested again for that field."""
+        conn = None
+        try:
+            conn = self._open()
+            if conn is None:
+                return {"ok": False, "error": "Documents need a database connection."}
+            with self._registry_lock:
+                agent, lock = self._agents.get(team_id), self._locks.get(team_id)
+            group = find_group(list_doc_facts(conn, team_id), fact_id)
+            if group is None:
+                return {"ok": False, "error": "This suggestion has already been accepted or dismissed."}
+            set_facts_status(conn, team_id, group.fact_ids, "dismissed", decided_by=dismissed_by)
+            if agent is not None:
+                with lock:
+                    self._load_candidates(conn, agent)
+            return {"ok": True, "field": group.field, "value": group.value}
+        except Exception:
+            log.exception("Component 1 could not dismiss suggestion %s", fact_id)
+            return {"ok": False, "error": "The suggestion could not be dismissed. Please try again."}
+        finally:
+            self._close(conn)
+
+    def refresh_suggestions(self, team_id: str) -> None:
+        """Reload a team's suggestions from the database (for example after a document was removed)."""
+        conn = None
+        try:
+            with self._registry_lock:
+                agent, lock = self._agents.get(team_id), self._locks.get(team_id)
+            if agent is None:
+                return                       # loaded fresh when the agent is first needed
+            conn = self._open()
+            if conn is not None:
+                with lock:
+                    self._load_candidates(conn, agent)
+        except Exception:
+            log.warning("Component 1 could not refresh suggestions for team %s", team_id, exc_info=True)
         finally:
             self._close(conn)
 

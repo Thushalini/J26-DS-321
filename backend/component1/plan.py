@@ -4,16 +4,22 @@ what Buddy said in the chat.
 
 Nothing here writes anything. The chat text behind a value ("evidence") is only included when
 the caller says the viewer may see the team's chat.
+
+Each field also lists its open document suggestions ("suggestions", best first), and the plan
+lists the team's uploaded documents. Both are left out when include_documents is False.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from .common.events import EventStore
 from .common.schema import FieldName, FieldStatus
+from .documents.candidates import Candidate, group_candidates
 from .gaps.gaps import check_completeness, ready_gaps
 from .state.features import mentions_for_field
-from .storage import load_events
+from .storage import list_doc_facts, list_documents, load_events
+
+MAX_SUGGESTIONS_PER_FIELD = 3
 
 NOTE = "Confidence is the system's own estimate (High, Medium or Low). It is not a guarantee of being right."
 
@@ -31,7 +37,13 @@ def confidence_band(confidence: float) -> str:
     return "Low"
 
 
-def plan_from_events(team_id: str, events: list, include_evidence: bool = False) -> dict[str, Any]:
+def plan_from_events(
+    team_id: str,
+    events: list,
+    include_evidence: bool = False,
+    suggestions: Optional[dict[str, list[Candidate]]] = None,
+    documents: Optional[list[dict]] = None,
+) -> dict[str, Any]:
     store = EventStore.from_events(team_id, events)
     state = store.state
     report = check_completeness(state)
@@ -63,6 +75,9 @@ def plan_from_events(team_id: str, events: list, include_evidence: bool = False)
                 }
                 for p in f.provenance
             ]
+        if suggestions is not None:
+            item["suggestions"] = [c.as_dict(include_evidence)
+                                   for c in suggestions.get(name.value, [])[:MAX_SUGGESTIONS_PER_FIELD]]
         fields.append(item)
 
     confirmed = sum(1 for f in state.fields.values() if f.status == FieldStatus.CONFIRMED)
@@ -82,10 +97,19 @@ def plan_from_events(team_id: str, events: list, include_evidence: bool = False)
         "next_gaps": [n.value for n in ready_gaps(state)[:3]],
         "fields": fields,
         "evidence_included": include_evidence,
+        "documents": documents,
         "note": NOTE,
     }
 
 
-def build_plan(conn: Any, team_id: str, include_evidence: bool = False) -> dict[str, Any]:
+DOCUMENT_KEYS = ("doc_id", "filename", "status", "error", "pages", "facts", "uploaded_at", "processed_at")
+
+
+def build_plan(conn: Any, team_id: str, include_evidence: bool = False,
+               include_documents: bool = True) -> dict[str, Any]:
     """The plan for one team, read from the database. A team Buddy has not heard yet gets an empty plan."""
-    return plan_from_events(team_id, load_events(conn, team_id), include_evidence)
+    suggestions = documents = None
+    if include_documents:
+        suggestions = group_candidates(list_doc_facts(conn, team_id))
+        documents = [{k: d.get(k) for k in DOCUMENT_KEYS} for d in list_documents(conn, team_id)]
+    return plan_from_events(team_id, load_events(conn, team_id), include_evidence, suggestions, documents)

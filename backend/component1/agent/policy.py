@@ -66,7 +66,8 @@ def check_text(signal: Signal) -> str:
 def found_text(signal: Signal) -> str:
     value = signal.values[0] if signal.values else ""
     where = signal.source or "the uploaded documents"
-    return f"I found a possible {field_label(signal.field)} in {where}: {value}. Should we use that?"
+    return (f"I found a possible {field_label(signal.field)} in {where}: {value}. Should we use that? "
+            f"(You can also accept or dismiss it on the Blueprint tab.)")
 
 
 def gap_text(signal: Signal) -> str:

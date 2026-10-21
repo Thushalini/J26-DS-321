@@ -62,4 +62,7 @@ def make_hybrid_llm(fallback: Optional[LLMFn], mode: Optional[str] = None) -> LL
             return EMPTY
 
     call.mode = mode  # for logs and tests
+    # The model behind the rules, for callers that run the rules themselves and decide when to
+    # ask the model (documents/extract.py caps it per document). None in "rules" mode.
+    call.fallback = fallback if mode != "rules" else None
     return call

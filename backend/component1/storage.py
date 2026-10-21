@@ -8,6 +8,9 @@ with c1_ so nothing clashes with the team's tables, and nothing existing is chan
     c1_events          the blueprint's full history, one row per change, never edited
     c1_agent_messages  what Buddy said, with room for accept/decline and an audit trail
     c1_processed       which chat messages Component 1 has already handled
+    c1_documents       uploaded documents and how far their processing got (not the file itself)
+    c1_doc_chunks      the text of each document, in short chunks with their page number
+    c1_doc_facts       planning facts found in documents: suggestions the team accepts or dismisses
 """
 from __future__ import annotations
 
@@ -48,7 +51,50 @@ TABLES = [
         processed_at TEXT NOT NULL,
         PRIMARY KEY (team_id, message_id)
     )""",
+    """CREATE TABLE IF NOT EXISTS c1_documents (
+        doc_id       TEXT PRIMARY KEY,
+        team_id      TEXT NOT NULL,
+        filename     TEXT NOT NULL,
+        size_bytes   INTEGER NOT NULL DEFAULT 0,
+        status       TEXT NOT NULL DEFAULT 'processing',
+        error        TEXT,
+        pages        INTEGER,
+        chunks       INTEGER,
+        facts        INTEGER,
+        uploaded_by  TEXT,
+        uploaded_at  TEXT NOT NULL,
+        processed_at TEXT
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_c1_documents_team ON c1_documents (team_id, uploaded_at)",
+    """CREATE TABLE IF NOT EXISTS c1_doc_chunks (
+        doc_id   TEXT NOT NULL,
+        chunk_no INTEGER NOT NULL,
+        page     INTEGER,
+        text     TEXT NOT NULL,
+        PRIMARY KEY (doc_id, chunk_no)
+    )""",
+    """CREATE TABLE IF NOT EXISTS c1_doc_facts (
+        fact_id    TEXT PRIMARY KEY,
+        team_id    TEXT NOT NULL,
+        doc_id     TEXT NOT NULL,
+        chunk_no   INTEGER NOT NULL,
+        page       INTEGER,
+        field      TEXT NOT NULL,
+        value      TEXT NOT NULL,
+        span       TEXT NOT NULL,
+        hedged     INTEGER NOT NULL DEFAULT 0,
+        method     TEXT NOT NULL,
+        ordinal    INTEGER NOT NULL DEFAULT 0,
+        status     TEXT NOT NULL DEFAULT 'open',
+        decided_by TEXT,
+        decided_at TEXT,
+        created_at TEXT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_c1_doc_facts_team ON c1_doc_facts (team_id, status)",
 ]
+
+DOC_STATUSES = ("processing", "done", "failed")
+FACT_STATUSES = ("open", "accepted", "dismissed")
 
 
 def _row_dict(cursor: Any, row: Any) -> dict:
@@ -76,6 +122,11 @@ def _commit(conn: Any) -> None:
 
 def _now_text() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _precise_now_text() -> str:
+    """To the microsecond, so two uploads in the same second still sort in upload order."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def ensure_c1_tables(conn: Any) -> None:
@@ -260,6 +311,127 @@ def merge_agent_messages(conn: Any, team_id: str, messages: list[dict], limit: i
     merged = members + buddy
     merged.sort(key=lambda m: (m["ts"], 0 if m["sender_type"] == "member" else 1, m["msg_id"]))
     return merged[-limit:]
+
+
+# ---------------------------------------------------------------- documents
+def _placeholders(n: int) -> str:
+    return ", ".join("?" for _ in range(n))
+
+
+def create_document(conn: Any, team_id: str, filename: str, size_bytes: int,
+                    uploaded_by: Optional[str] = None) -> dict:
+    """Register an upload before it is processed, so the screen can show it straight away."""
+    doc_id = "d_" + uuid.uuid4().hex[:12]
+    conn.execute(
+        "INSERT INTO c1_documents (doc_id, team_id, filename, size_bytes, status, uploaded_by, uploaded_at) "
+        "VALUES (?, ?, ?, ?, 'processing', ?, ?)",
+        (doc_id, team_id, filename, int(size_bytes), uploaded_by, _precise_now_text()),
+    )
+    _commit(conn)
+    return get_document(conn, team_id, doc_id)
+
+
+def get_document(conn: Any, team_id: str, doc_id: str) -> Optional[dict]:
+    return _one(conn.execute(
+        "SELECT doc_id, team_id, filename, size_bytes, status, error, pages, chunks, facts, uploaded_by, "
+        "uploaded_at, processed_at FROM c1_documents WHERE team_id = ? AND doc_id = ?",
+        (team_id, doc_id),
+    ))
+
+
+def list_documents(conn: Any, team_id: str) -> list[dict]:
+    """A team's documents, newest first."""
+    return _all(conn.execute(
+        "SELECT doc_id, team_id, filename, size_bytes, status, error, pages, chunks, facts, uploaded_by, "
+        "uploaded_at, processed_at FROM c1_documents WHERE team_id = ? ORDER BY uploaded_at DESC, doc_id DESC",
+        (team_id,),
+    ))
+
+
+def finish_document(conn: Any, doc_id: str, chunks: Iterable[Any], facts: Iterable[Any], pages: int) -> None:
+    """Store a processed document's chunks and facts, and mark it done.
+
+    chunks: objects with number / page / text. facts: objects with chunk_no / page / field /
+    value / span / hedged / method (see documents/chunk.py and documents/extract.py).
+    """
+    row = _one(conn.execute("SELECT team_id FROM c1_documents WHERE doc_id = ?", (doc_id,)))
+    if row is None:              # deleted while it was being processed: keep nothing
+        return
+    team_id, now = row["team_id"], _now_text()
+    chunks, facts = list(chunks), list(facts)
+    for c in chunks:
+        conn.execute("INSERT INTO c1_doc_chunks (doc_id, chunk_no, page, text) VALUES (?, ?, ?, ?)",
+                     (doc_id, c.number, c.page, c.text))
+    for ordinal, f in enumerate(facts):
+        conn.execute(
+            "INSERT INTO c1_doc_facts (fact_id, team_id, doc_id, chunk_no, page, field, value, span, hedged, "
+            "method, ordinal, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)",
+            ("f_" + uuid.uuid4().hex[:12], team_id, doc_id, f.chunk_no, f.page, f.field, f.value, f.span,
+             1 if f.hedged else 0, f.method, ordinal, now),
+        )
+    conn.execute(
+        "UPDATE c1_documents SET status = 'done', error = NULL, pages = ?, chunks = ?, facts = ?, processed_at = ? "
+        "WHERE doc_id = ?",
+        (pages, len(chunks), len(facts), now, doc_id),
+    )
+    _commit(conn)
+
+
+def fail_document(conn: Any, doc_id: str, error: str) -> None:
+    conn.execute("UPDATE c1_documents SET status = 'failed', error = ?, processed_at = ? WHERE doc_id = ?",
+                 (error[:500], _now_text(), doc_id))
+    _commit(conn)
+
+
+def delete_document(conn: Any, team_id: str, doc_id: str) -> bool:
+    """Remove a document, its text and its undecided suggestions. Accepted facts stay, because
+    the blueprint's history points at them. Returns False if there was no such document."""
+    if get_document(conn, team_id, doc_id) is None:
+        return False
+    conn.execute("DELETE FROM c1_doc_chunks WHERE doc_id = ?", (doc_id,))
+    conn.execute("DELETE FROM c1_doc_facts WHERE doc_id = ? AND status <> 'accepted'", (doc_id,))
+    conn.execute("DELETE FROM c1_documents WHERE team_id = ? AND doc_id = ?", (team_id, doc_id))
+    _commit(conn)
+    return True
+
+
+def list_doc_chunks(conn: Any, doc_id: str) -> list[dict]:
+    return _all(conn.execute(
+        "SELECT chunk_no, page, text FROM c1_doc_chunks WHERE doc_id = ? ORDER BY chunk_no", (doc_id,)
+    ))
+
+
+def list_doc_facts(conn: Any, team_id: str, statuses: Iterable[str] = FACT_STATUSES) -> list[dict]:
+    """A team's document facts with their file name, oldest document first, then page and chunk."""
+    statuses = list(statuses)
+    rows = _all(conn.execute(
+        "SELECT f.fact_id, f.doc_id, d.filename, d.uploaded_at, f.chunk_no, f.page, f.field, f.value, f.span, "
+        "f.hedged, f.method, f.status, f.decided_by, f.decided_at "
+        "FROM c1_doc_facts f LEFT JOIN c1_documents d ON d.doc_id = f.doc_id "
+        f"WHERE f.team_id = ? AND f.status IN ({_placeholders(len(statuses))}) "
+        "ORDER BY d.uploaded_at, f.doc_id, f.ordinal",
+        [team_id, *statuses],
+    ))
+    for r in rows:
+        r["hedged"] = bool(r["hedged"])
+    return rows
+
+
+def set_facts_status(conn: Any, team_id: str, fact_ids: Iterable[str], status: str,
+                     decided_by: Optional[str] = None) -> int:
+    """Mark facts accepted or dismissed. Only facts still open change. Returns how many changed."""
+    if status not in FACT_STATUSES:
+        raise ValueError(f"status must be one of {FACT_STATUSES}")
+    ids = list(fact_ids)
+    if not ids:
+        return 0
+    cur = conn.execute(
+        f"UPDATE c1_doc_facts SET status = ?, decided_by = ?, decided_at = ? "
+        f"WHERE team_id = ? AND status = 'open' AND fact_id IN ({_placeholders(len(ids))})",
+        [status, decided_by, _now_text(), team_id, *ids],
+    )
+    _commit(conn)
+    return getattr(cur, "rowcount", 0) or 0
 
 
 # ----------------------------- keep Component 2's three-value blueprint current

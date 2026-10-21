@@ -67,6 +67,7 @@ METRICS: dict[str, list[str]] = {
     "ROC AUC": ["roc auc", "roc-auc", "auc", "auroc"],
     "Log Loss": ["log loss", "logloss", "cross-entropy"],
     "Silhouette Score": ["silhouette score", "silhouette"],
+    "Cohen's Kappa": ["cohen'?s kappa", "cohen kappa", "kappa"],
 }
 
 TASK_TYPES: dict[str, list[str]] = {
@@ -128,6 +129,11 @@ GENERIC_DATA_WORDS = {
     "training", "test", "testing", "validation", "raw", "more", "new", "same", "enough", "some",
     "real", "sample", "clean", "cleaned", "missing", "full", "whole", "other", "existing", "labelled",
     "labeled", "big", "small", "large", "good", "bad", "any", "all", "this", "that", "our", "my",
+    # found in real project documents ("the main data needed is ...")
+    "main", "primary", "project", "own", "team", "input", "required", "needed", "relevant", "available",
+    "collected", "synthetic", "public", "private", "chat", "text", "planning", "historical", "entire",
+    "final", "original", "tabular", "structured", "unstructured", "numeric", "numerical", "categorical",
+    "outcome", "experimental", "such", "the", "their", "its", "your", "meta",
 }
 
 # Words that end a captured phrase ("predict churn USING xgboost").
@@ -178,7 +184,9 @@ _TARGET_PATTERNS = [
 _DATASET_PATTERNS = [
     re.compile(rf"\b(?:data ?set|data)\s*(?:is|will be|should be|=|:)\s+(?:the\s+)?{_PHRASE_VALUE}{_PHRASE_END}",
                re.IGNORECASE),
-    re.compile(r"\b(?:the|a|an|this|that|our)\s+(?P<v>[A-Za-z0-9][\w\-' ]{1,40}?\s+(?:data ?set|data))\b",
+    # "the Kaggle tourism dataset", "the PIPES meta-dataset", "the AMI Meeting Corpus"
+    re.compile(r"\b(?:the|a|an|this|that|our)\s+(?P<v>[A-Za-z0-9][\w\-' ]{0,40}?(?:\s+|\s*-)"
+               r"(?:meta-?)?(?:data ?set|data|corpus))\b",
                re.IGNORECASE),
 ]
 _DOMAIN_PATTERNS = [
@@ -217,7 +225,7 @@ def _clean(value: str) -> Optional[str]:
 
 
 def _names_a_dataset(value: str) -> bool:
-    words = re.sub(r"\s+(?:data ?set|data)$", "", value, flags=re.IGNORECASE).lower().split()
+    words = re.sub(r"(?:\s+|\s*-)(?:meta-?)?(?:data ?set|data|corpus)$", "", value, flags=re.IGNORECASE).lower().split()
     return bool(words) and " of " not in f" {' '.join(words)} " and not all(w in GENERIC_DATA_WORDS for w in words)
 
 

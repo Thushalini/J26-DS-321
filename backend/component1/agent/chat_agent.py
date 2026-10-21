@@ -13,6 +13,11 @@ If an intent model is given, a message that backs up a value someone ELSE just p
 
 If the agent is rebuilt from saved events (after a restart), the last saved mention is used as
 the topic again, but only for the first message that follows.
+
+Document suggestions (documents/candidates.py) are kept in `candidates`, field -> best one.
+Buddy asks about a suggestion for a field that is still missing. If a team member then backs
+it up ("yes, use that"), the suggestion is accepted, exactly as with the Blueprint tab's
+Accept button. Accepted suggestions collect in `accepted` until the caller has saved them.
 """
 from __future__ import annotations
 
@@ -20,11 +25,13 @@ import logging
 from typing import Optional
 
 from ..common.events import EventStore
+from ..documents.candidates import Candidate
+from ..documents.integrate import accept_candidate, document_speaker
 from ..extraction.extractor import LLMFn
-from ..pipeline import process_message, state_signals
+from ..pipeline import _SAVED_DETAIL, MessageResult, process_message, state_signals
 from ..state.features import EXTRACTOR_ACTOR
 from .policy import Buddy
-from .signals import SAVED, Signal
+from .signals import FOUND, SAVED, Signal
 
 log = logging.getLogger("component1")
 
@@ -53,6 +60,9 @@ class ChatAgent:
         self._prev_text = ""
         self._topic: Optional[tuple[str, str, str]] = None     # (field, value, speaker who proposed it)
         self._since_topic = 0
+        self.candidates: dict[str, Candidate] = {}              # field -> best open document suggestion
+        self.accepted: list[tuple[Candidate, str]] = []         # (suggestion, accepted by), not saved yet
+        self._found_topic: Optional[Candidate] = None           # the suggestion Buddy last asked about
         self._restore_topic()
 
     # ----------------------------------------------------------- restart
@@ -98,6 +108,38 @@ class ChatAgent:
             return field, value
         return None
 
+    # --------------------------------------------------------- documents
+    def notice_documents(self) -> None:
+        """A document was processed for this team, so Buddy may speak even before any chat."""
+        self._heard_any_message = True
+
+    def accept(self, candidate: Candidate, accepted_by: str, via: Optional[str] = None) -> tuple[str, float]:
+        """Accept a document suggestion (Blueprint tab or chat). Returns the field's new status."""
+        result = accept_candidate(self.store, self.bundle, candidate, accepted_by, via)
+        self.accepted.append((candidate, accepted_by))
+        if self.candidates.get(candidate.field) is not None and self.candidates[candidate.field].key == candidate.key:
+            del self.candidates[candidate.field]
+        if self._found_topic is not None and self._found_topic.field == candidate.field:
+            self._found_topic = None
+        return result
+
+    def _open_found_topic(self, endorse: Optional[tuple[str, str]]) -> Optional[Candidate]:
+        """The suggestion this message backs up, if it is the one Buddy asked about and still open."""
+        c = self._found_topic
+        if endorse is None or c is None or endorse != (c.field, c.value):
+            return None
+        current = self.candidates.get(c.field)
+        return current if current is not None and current.key == c.key else None
+
+    def _after_step(self) -> None:
+        """If Buddy just asked about a document suggestion, the next "yes" refers to it."""
+        for key in self.buddy.last_step_keys:
+            if key[0] == FOUND and key[1] in self.candidates:
+                c = self.candidates[key[1]]
+                self._found_topic = c
+                self._topic = (c.field, c.value, document_speaker(c))
+                self._since_topic = 0
+
     # ------------------------------------------------------------- calls
     def on_message(self, message_id: str, speaker: str, text: str, now: float) -> list[str]:
         """Call for every message written by a PERSON. Never call it for Buddy's own messages."""
@@ -106,7 +148,16 @@ class ChatAgent:
         self._since_topic += 1
 
         endorse = self._endorsement(speaker, text)
-        result = process_message(self.store, self.bundle, self.llm, message_id, speaker, text, endorse=endorse)
+        found = self._open_found_topic(endorse)
+        result = process_message(self.store, self.bundle, self.llm, message_id, speaker, text,
+                                 endorse=None if found else endorse, candidates=self.candidates)
+        if found is not None and not result.saved:      # "yes, use that" about Buddy's suggestion
+            label, probability = self.accept(found, speaker, via=message_id)
+            saved = Signal(SAVED, found.field, (found.value,), detail=_SAVED_DETAIL.get(label, ""),
+                           source=f"{found.source_label}, accepted by {speaker}")
+            result = MessageResult(saved=[(found.field, found.value)], statuses={found.field: (label, probability)},
+                                   signals=[saved] + state_signals(self.store, self.candidates))
+            endorse = (found.field, found.value)
 
         # A message that stated a new value becomes the topic the next "ok" refers to.
         stated = [s for s in result.saved if endorse is None or s != endorse]
@@ -115,12 +166,16 @@ class ChatAgent:
             self._topic = (field, value, speaker)
             self._since_topic = 0
         self._prev_text = text
-        return self.buddy.step(result.signals, now)
+        replies = self.buddy.step(result.signals, now)
+        self._after_step()
+        return replies
 
     def tick(self, now: float) -> list[str]:
         """Call regularly (for example every 30 seconds). Lets Buddy ask a question after
         the chat has gone quiet. It never repeats saves and never speaks in an empty chat."""
         if not self._heard_any_message:
             return []
-        signals: list[Signal] = [s for s in state_signals(self.store) if s.kind != SAVED]
-        return self.buddy.step(signals, now)
+        signals: list[Signal] = [s for s in state_signals(self.store, self.candidates) if s.kind != SAVED]
+        replies = self.buddy.step(signals, now)
+        self._after_step()
+        return replies
