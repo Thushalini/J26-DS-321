@@ -232,6 +232,17 @@ export interface PlanCheck {
   alternatives: string[]
 }
 
+/** The trained feasibility model's verdict on the plan (trained on simulated project outcomes). */
+export interface PlanFeasibilityModel {
+  label: "feasible" | "risky" | "infeasible" | string
+  probability: number
+  probabilities: Record<string, number>
+  inputs: { task: string; algorithm: string; family: string; rows: number; has_gpu: boolean; weeks_left: number | null }
+  reasons: { text: string; effect: "raises risk" | "lowers risk" | string; weight: number }[]
+  alternatives: { change: string; label: string; feasible_probability: number }[]
+  note: string
+}
+
 export interface PlanMilestone {
   decision_id: string
   name: string
@@ -251,6 +262,7 @@ export interface PlanData {
   recent_changes?: PlanHistoryEntry[]
   milestones?: PlanMilestone[]
   checks?: PlanCheck[]
+  feasibility_model?: PlanFeasibilityModel | null
   feasibility?: Record<string, string> | null
   team_id: string
   version: number

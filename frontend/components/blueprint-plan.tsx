@@ -15,6 +15,7 @@ import {
   type PlanDocument,
   type PlanField,
   type PlanCheck,
+  type PlanFeasibilityModel,
   type PlanHistoryEntry,
   type PlanMilestone,
   type PlanSuggestion,
@@ -35,6 +36,74 @@ const CHECK_LOOK: Record<string, { word: string; mark: string; cls: string }> = 
   pass: { word: "Fits", mark: "✓", cls: "border-status-good text-status-good bg-status-good/10" },
   warning: { word: "Check this", mark: "!", cls: "border-status-warning text-foreground bg-status-warning/10" },
   fail: { word: "Does not fit", mark: "✕", cls: "border-status-critical text-status-critical bg-status-critical/10" },
+}
+
+const VERDICT: Record<string, { word: string; cls: string; bar: string }> = {
+  feasible: { word: "Feasible", cls: "border-status-good text-status-good bg-status-good/10", bar: "bg-status-good" },
+  risky: { word: "Risky", cls: "border-status-warning text-foreground bg-status-warning/10", bar: "bg-status-warning" },
+  infeasible: { word: "Infeasible", cls: "border-status-critical text-status-critical bg-status-critical/10", bar: "bg-status-critical" },
+}
+
+function FeasibilityCard({ f }: { f: PlanFeasibilityModel | null | undefined }) {
+  return (
+    <Card
+      title="Can the team finish this plan?"
+      note="A trained model judges the plan from the task, algorithm, dataset size, GPU and time left. It learned from simulated project outcomes, so treat it as a second opinion, not a verdict."
+    >
+      {!f ? (
+        <p className="text-sm text-muted">
+          Not judged yet. Buddy needs the algorithm and the dataset size (for example &ldquo;about 10k rows&rdquo;).
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-2 py-0.5 text-sm font-semibold ${(VERDICT[f.label] ?? VERDICT.risky).cls}`}>
+              {(VERDICT[f.label] ?? VERDICT.risky).word}
+            </span>
+            <span className="text-xs text-muted">model confidence {Math.round(f.probability * 100)}%</span>
+          </div>
+          <ul className="flex flex-col gap-1" aria-label="Model probabilities">
+            {Object.entries(f.probabilities).map(([label, p]) => (
+              <li key={label} className="flex items-center gap-2 text-xs">
+                <span className="w-20 text-muted">{(VERDICT[label] ?? { word: label }).word}</span>
+                <span className="h-2 flex-1 overflow-hidden rounded-bar bg-chart-track">
+                  <span className={`block h-full ${(VERDICT[label] ?? VERDICT.risky).bar}`} style={{ width: `${Math.round(p * 100)}%` }} />
+                </span>
+                <span className="w-9 text-right">{Math.round(p * 100)}%</span>
+              </li>
+            ))}
+          </ul>
+          {f.reasons.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold">Main reasons</p>
+              <ul className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted">
+                {f.reasons.map((r) => (
+                  <li key={r.text}>
+                    <span aria-hidden>{r.effect === "raises risk" ? "↑ " : "↓ "}</span>
+                    {r.text} <span>({r.effect})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {f.alternatives.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold">Changes that would help</p>
+              <ul className="mt-0.5 flex flex-col gap-0.5 text-xs">
+                {f.alternatives.map((a) => (
+                  <li key={a.change}>
+                    {a.change.charAt(0).toUpperCase() + a.change.slice(1)}{" "}
+                    <span className="text-muted">→ {Math.round(a.feasible_probability * 100)}% feasible</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-xs text-muted">{f.note}</p>
+        </div>
+      )}
+    </Card>
+  )
 }
 
 function PlanChecks({ checks }: { checks: PlanCheck[] }) {
@@ -464,6 +533,8 @@ export function BlueprintPlan({ teamId }: { teamId: string }) {
           {plan.updated_at && <p className="text-xs text-muted">Last change {shortDate(plan.updated_at)}</p>}
         </div>
       </Card>
+
+      {"feasibility_model" in plan && <FeasibilityCard f={plan.feasibility_model} />}
 
       {plan.checks && <PlanChecks checks={plan.checks} />}
 
