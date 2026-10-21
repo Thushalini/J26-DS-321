@@ -46,6 +46,8 @@ export const predictCopy = {
     description: "Calibrated chance this project meets its goals.",
     delta: "since last evaluation",
     history: "Previous evaluations",
+    range: "Likely {low}–{high}%. The range narrows as more signals are measured.",
+    rangeMinWidth: 1,
   },
   factors: {
     title: "What is driving it",
@@ -92,6 +94,20 @@ export const predictCopy = {
   pulse: {
     title: "Pulse",
     more: "See Predict for the reasons and what to do next.",
+  },
+  milestones: {
+    title: "Milestone results",
+    description: "After each milestone (e.g. PP1, a viva), record how it went. Buddy compares this with its earlier predictions to check itself.",
+    empty: "No results recorded yet.",
+    name: "Milestone",
+    namePlaceholder: "e.g. Progress presentation 1",
+    date: "Date",
+    result: "How it went",
+    save: "Save result",
+    saving: "Saving…",
+    remove: "Remove",
+    readOnly: "Only the group's members can record results.",
+    options: { passed_well: "Passed well", passed_with_issues: "Passed with issues", needs_rework: "Needs rework" },
   },
   helpers: {
     title: "Who could help",

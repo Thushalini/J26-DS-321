@@ -10,6 +10,7 @@ type ApiPrediction = {
   enough_data?: boolean
   evaluated_at: string
   probability: number | null
+  probability_range?: { low: number; high: number }
   factors: { id: string; label: string; contribution: number; detail: string; measured?: boolean }[]
   forecast: ForecastPoint[]
   recommendations: { id: string; title: string; reason: string; area: string; expected_gain: number }[]
@@ -30,6 +31,7 @@ export function toPrediction(body: ApiPrediction): Prediction {
     evaluatedAt: body.evaluated_at,
     probability: body.probability ?? 0,
     enoughData: body.enough_data ?? true,
+    probabilityRange: body.probability_range,
     history: body.history ?? [],
     factors: body.factors.map(({ id, label, contribution, detail, measured }) => ({ id, label, contribution, detail, measured })),
     forecast: body.forecast,

@@ -8,19 +8,29 @@ export const supervisionStatuses: { id: SupervisionStatus; label: string; dot: s
 
 export const unratedStatus = { label: "Not rated yet", dot: "bg-border" }
 
+export type GroupOutlook = {
+  team_id: string
+  enough_data: boolean
+  status: SupervisionStatus | null
+  probability: number | null
+}
+
 export function statusInfo(id: SupervisionStatus | null | undefined) {
   return supervisionStatuses.find((s) => s.id === id) ?? unratedStatus
 }
 
 export const supervisorCopy = {
   groupsTitle: "My groups",
-  groupsNote: "Tap a group to open its analytics. The dot is your own status for the group.",
+  groupsNote: "Tap a group to open its analytics. Dots follow Buddy's prediction unless you set one yourself.",
+  setByYou: "status set by you",
+  buddyLabel: "Buddy: {label} ({probability}%)",
+  buddyNoData: "Buddy: not enough data yet",
   noGroups: "No groups yet. Give students your supervisor code (bottom of this page) so they can add you.",
   menuLabel: "Group options",
   rename: "Rename",
   save: "Save",
   setStatus: "Set status",
-  clearStatus: "Clear status",
+  clearStatus: "Use Buddy's status",
   remove: "Remove from my list",
   removeConfirm: "Remove this group from your list? It moves to Past groups at the bottom of this page.",
   panelTitle: "Panel review",
