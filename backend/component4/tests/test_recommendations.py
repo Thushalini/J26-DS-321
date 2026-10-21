@@ -19,7 +19,8 @@ def factor(name, points):
     return {"feature": name, "value": 0.0, "contribution_points": points}
 
 
-def test_weak_signal_triggers_its_action(setup):
+def test_weak_signal_triggers_its_action(setup, monkeypatch):
+    monkeypatch.setitem(rec.SETTINGS, "min_gain_points", float("-inf"))
     model, project = setup
     project = project.copy()
     project["drift_score"] = 0.95

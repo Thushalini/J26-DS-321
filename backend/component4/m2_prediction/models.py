@@ -3,25 +3,33 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier, StackingClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from ..common import config
+from ..synthetic.feature_spec import FEATURES
 
 
 def _logistic_regression(seed: int):
     return make_pipeline(StandardScaler(), LogisticRegression(**config.MODEL_PARAMS["logistic_regression"], random_state=seed))
 
 
+def directions() -> list[int] | None:
+    """Each signal may only push the probability its expected way (e.g. more drift never raises it)."""
+    return [spec.direction for spec in FEATURES] if config.MODEL_PARAMS["monotonic"] else None
+
+
 def baselines(seed: int = config.SEED, tuned: dict | None = None) -> dict:
     params = config.MODEL_PARAMS
     models = {
         "logistic_regression": _logistic_regression(seed),
-        "random_forest": RandomForestClassifier(**params["random_forest"], random_state=seed, n_jobs=-1),
-        "gradient_boosting": GradientBoostingClassifier(**params["gradient_boosting"], random_state=seed),
+        "random_forest": RandomForestClassifier(**params["random_forest"], monotonic_cst=directions(),
+                                                random_state=seed, n_jobs=-1),
+        "gradient_boosting": HistGradientBoostingClassifier(**params["gradient_boosting"], monotonic_cst=directions(),
+                                                            random_state=seed),
     }
     for name, overrides in (tuned or {}).items():
         models[name].set_params(**overrides)
@@ -39,7 +47,9 @@ def stacking(seed: int = config.SEED, tuned: dict | None = None) -> StackingClas
 
 
 def calibrate_best(model, x_train, y_train, x_val, y_val) -> tuple:
-    """Fits one calibrated copy per method and keeps the one with the lower validation Brier score."""
+    """Fits one calibrated copy per method and keeps the one with the lower validation Brier score. A method only
+    replaces the preferred one when it wins by more than switch_margin: isotonic's step-shaped output makes
+    what-if gains, ranges and the forecast cone jump, so a near-tie goes to the smooth Platt (sigmoid) method."""
     scores, fitted = {}, {}
     for method in config.CALIBRATION["methods"]:
         candidate = CalibratedClassifierCV(clone(model), method=method, cv=config.CALIBRATION["cv"], ensemble=False)
@@ -47,6 +57,9 @@ def calibrate_best(model, x_train, y_train, x_val, y_val) -> tuple:
         scores[method] = float(brier_score_loss(y_val, candidate.predict_proba(x_val)[:, 1]))
         fitted[method] = candidate
     best = min(scores, key=scores.get)
+    preferred = config.CALIBRATION["preferred"]
+    if scores[preferred] - scores[best] <= config.CALIBRATION["switch_margin"]:
+        best = preferred
     return fitted[best], best, scores
 
 

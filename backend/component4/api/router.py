@@ -8,11 +8,14 @@
                                        repo's readiness; no number until enough signals come from the team
   GET|POST /c4/teams/{team_id}/sheets   saved score sheets per member (anyone in the group); DELETE .../sheets/{uid}
   POST /c4/teams/{team_id}/helpers      saved sheets -> who could help with each weak stage
+  GET|POST /c4/teams/{team_id}/milestone-results   the group's own result after each milestone; DELETE .../{id}
+  GET  /c4/supervisor/outlook           suggested status dot for each group in the supervisor's list
 
 Academic marks never reach the prediction: they are only used by the helper suggestions and are never shown.
 """
 import base64
 import binascii
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -23,12 +26,13 @@ from buddy.auth import current_user, get_conn
 from ..common import config
 from ..m1_feature_integration.team_sources import team_project
 from ..m6_improvement import history
+from ..m6_improvement import milestone_results
 from ..m6_improvement.competency.scoring import competency, suggest_helpers
 from ..m6_improvement.competency import store as sheet_store
 from ..m6_improvement.competency.sheets import SheetError, parse_sheet
 from ..m6_improvement.weak_stages import weak_stages
 from ..synthetic.feature_spec import FEATURES
-from . import service
+from . import outlook, service
 
 router = APIRouter(prefix=config.API["prefix"], tags=["Component 4 - Success prediction"])
 
@@ -199,3 +203,46 @@ def team_helpers(team_id: str, body: HelpersRequest, user=Depends(current_user),
         "sheets_used": len(members),
         "note": "Marks are never shown, only the suggested person.",
     }
+
+
+class MilestoneResult(BaseModel):
+    milestone: str = Field(min_length=1, max_length=config.MILESTONE_RESULTS["max_name"])
+    milestone_date: date
+    result: str
+
+
+@router.get("/teams/{team_id}/milestone-results")
+def list_milestone_results(team_id: str, user=Depends(current_user), conn=Depends(get_conn)):
+    _group(conn, user, team_id, "see milestone results")
+    return milestone_results.listed(conn, team_id)
+
+
+@router.post("/teams/{team_id}/milestone-results")
+def add_milestone_result(team_id: str, body: MilestoneResult, user=Depends(current_user), conn=Depends(get_conn)):
+    team, my_role = team_access(conn, user, team_id)
+    require_live(team, "record milestone results")
+    require(my_role, tuple(config.MILESTONE_RESULTS["record_roles"]), "record milestone results")
+    if body.result not in config.MILESTONE_RESULTS["options"]:
+        raise HTTPException(422, f"Result must be one of: {', '.join(config.MILESTONE_RESULTS['options'])}.")
+    milestone_results.add(conn, team_id, body.milestone.strip(), body.milestone_date.isoformat(), body.result, user["user_id"])
+    return milestone_results.listed(conn, team_id)
+
+
+@router.delete("/teams/{team_id}/milestone-results/{result_id}")
+def delete_milestone_result(team_id: str, result_id: str, user=Depends(current_user), conn=Depends(get_conn)):
+    team, my_role = team_access(conn, user, team_id)
+    require_live(team, "remove milestone results")
+    require(my_role, tuple(config.MILESTONE_RESULTS["record_roles"]), "remove milestone results")
+    milestone_results.remove(conn, team_id, result_id)
+    return milestone_results.listed(conn, team_id)
+
+
+@router.get("/supervisor/outlook")
+def supervisor_outlook(user=Depends(current_user), conn=Depends(get_conn)):
+    if user["role"] != "supervisor":
+        raise HTTPException(403, "Only supervisors have a group list.")
+    bundle = _ready()
+    teams = [team_id for (team_id,) in conn.execute(
+        "SELECT team_id FROM team_members WHERE user_id = ? AND team_role = 'supervisor' AND archived_at IS NULL",
+        (user["user_id"],)).fetchall()]
+    return [outlook.team_outlook(conn, team_id, bundle) for team_id in teams]

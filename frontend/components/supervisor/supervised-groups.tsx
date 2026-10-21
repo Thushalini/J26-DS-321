@@ -1,12 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { Card, inputClass } from "@/components/ui"
 import { GroupMenu } from "@/components/supervisor/group-menu"
 import { StatusDot } from "@/components/supervisor/status-dot"
-import { shortDate, type Team } from "@/lib/api"
-import { supervisorCopy as copy } from "@/lib/supervision"
+import { api, shortDate, type Team } from "@/lib/api"
+import { statusInfo, supervisorCopy as copy, type GroupOutlook } from "@/lib/supervision"
+
+function dotTitle(manual: Team["supervision_status"], outlook: GroupOutlook | undefined) {
+  if (manual) return `${statusInfo(manual).label} (${copy.setByYou})`
+  if (!outlook) return undefined
+  if (!outlook.enough_data || !outlook.status) return copy.buddyNoData
+  return copy.buddyLabel.replace("{label}", statusInfo(outlook.status).label).replace("{probability}", String(Math.round(outlook.probability ?? 0)))
+}
 
 export function SupervisedGroups({ teams, openId, onOpen, onChanged, onError }: {
   teams: Team[]
@@ -16,7 +23,16 @@ export function SupervisedGroups({ teams, openId, onOpen, onChanged, onError }: 
   onError: (message: string) => void
 }) {
   const [query, setQuery] = useState("")
+  const [outlook, setOutlook] = useState<Record<string, GroupOutlook>>({})
   const shown = teams.filter((t) => t.name.toLowerCase().includes(query.trim().toLowerCase()))
+  const teamKey = teams.map((t) => t.team_id).join(",")
+
+  useEffect(() => {
+    if (!teamKey) return
+    api<GroupOutlook[]>("/c4/supervisor/outlook")
+      .then((list) => setOutlook(Object.fromEntries(list.map((o) => [o.team_id, o]))))
+      .catch(() => setOutlook({}))
+  }, [teamKey])
 
   return (
     <Card title={copy.groupsTitle} note={teams.length ? copy.groupsNote : copy.noGroups}>
@@ -34,9 +50,11 @@ export function SupervisedGroups({ teams, openId, onOpen, onChanged, onError }: 
                 <span className="block truncate text-sm font-semibold">{t.name}</span>
                 <span className="block text-xs text-muted">
                   {t.members ?? 0} {t.members === 1 ? "member" : "members"} · {t.activities ?? 0} activities · synced {shortDate(t.last_synced)}
+                  {t.supervision_status && ` · ${copy.setByYou}`}
                 </span>
               </button>
-              <StatusDot status={t.supervision_status} />
+              <StatusDot status={t.supervision_status ?? outlook[t.team_id]?.status} manual={Boolean(t.supervision_status)}
+                         title={dotTitle(t.supervision_status, outlook[t.team_id])} />
               <GroupMenu team={t} onChanged={onChanged} onError={onError} />
             </li>
           ))}

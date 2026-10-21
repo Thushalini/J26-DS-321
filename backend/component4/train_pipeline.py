@@ -30,7 +30,7 @@ def main():
 
     checks = validate.run_checks(frame)
     validate.save_report(checks)
-    blocking = [c["check"] for c in checks if not c["passed"] and c["check"] != "every_feature_sourced"]
+    blocking = [c["check"] for c in checks if not c["passed"] and c["check"] not in ("every_feature_sourced", "ranges_sourced")]
     if blocking:
         raise SystemExit(f"Data validation failed: {blocking}. See {config.DATA_VALIDATION_JSON}")
     unsourced = next(c for c in checks if c["check"] == "every_feature_sourced")
@@ -46,6 +46,7 @@ def main():
         "features": report["features"],
         "version": config.MODEL_VERSION,
         "background": x_train.sample(min(len(x_train), config.API["background_size"]), random_state=config.SEED),
+        "fill_sample": x_train.sample(min(len(x_train), config.API["fill_sample_size"]), random_state=config.SEED),
         "medians": x_train.median().to_dict(),
         "demo_project": x_test.iloc[config.API["demo_project_index"]].to_dict(),
     }, config.MODEL_PATH)

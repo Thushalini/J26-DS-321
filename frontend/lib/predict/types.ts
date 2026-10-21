@@ -49,6 +49,7 @@ export type Prediction = {
   } | null
   recommendations: Recommendation[]
   enoughData: boolean
+  probabilityRange?: { low: number; high: number }
   signalsFromTeam?: number
   totalSignals?: number
   minSignals?: number
@@ -74,6 +75,14 @@ export type SavedSheet = {
   name: string
   saved: boolean
   uploaded_at: string | null
+}
+
+export type MilestoneResult = {
+  result_id: string
+  milestone: string
+  date: string
+  result: string
+  recorded_at: string
 }
 
 export type HelperSuggestion = {

@@ -1,6 +1,7 @@
 "use client"
 
 import { HelperSuggestions } from "@/components/predict/helper-suggestions"
+import { MilestoneResults } from "@/components/predict/milestone-results"
 import {
   FactorsCard, ForecastCard, NotEnoughData, PredictionState, ProbabilityCard, ReadinessCard, SignalsNote,
 } from "@/components/predict/prediction-sections"
@@ -15,6 +16,7 @@ export default function PredictPage() {
   const { team } = useSession()
   const { prediction, error, loading, reload } = useTeamPrediction(team?.team_id)
   const canUploadSheets = !team?.is_research && ["lead", "member", "supervisor"].includes(team?.my_role ?? "")
+  const canRecordResults = !team?.is_research && ["lead", "member"].includes(team?.my_role ?? "")
 
   return (
     <div className="space-y-4">
@@ -46,6 +48,10 @@ export default function PredictPage() {
         <SectionCard title={predictCopy.recommendations.title} description={predictCopy.recommendations.description}>
           <Recommendations items={prediction.recommendations} />
         </SectionCard>
+      )}
+
+      {team && canUploadSheets && (
+        <MilestoneResults teamId={team.team_id} canRecord={canRecordResults} />
       )}
 
       {team && canUploadSheets && (

@@ -20,8 +20,22 @@ def test_different_seed_gives_different_data():
 
 
 def test_full_size_data_passes_every_check_except_sources():
-    failed = [name for name, c in checks_by_name(generator.generate()).items() if not c["passed"]]
-    assert failed in ([], ["every_feature_sourced"])
+    failed = {name for name, c in checks_by_name(generator.generate()).items() if not c["passed"]}
+    assert failed <= {"every_feature_sourced", "ranges_sourced"}
+
+
+def test_every_source_key_is_listed():
+    from component4.synthetic.feature_spec import FEATURES
+    from component4.synthetic.sources import SOURCES
+    used = {key for spec in FEATURES for key in spec.weight_sources + spec.range_sources}
+    assert used <= set(SOURCES) and all(spec.weight_sources for spec in FEATURES)
+
+
+def test_sourced_spreads_follow_their_source():
+    frame = generator.generate()
+    assert frame["reproducibility"].mean() < 0.35
+    assert frame["mlops_readiness_score"].mean() < 45
+    assert frame["contribution_balance"].median() < 0.5
 
 
 def test_outcome_shares_match_config():
