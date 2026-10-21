@@ -170,6 +170,7 @@ def predict_run(run: dict, log_path=None) -> dict:
         "recommendation": advice,
         "drift_severity_score_used": ctx["drift_severity_score"],
         "drift_source": str((run.get("context") or {}).get("drift_source", "provided")),
+        "assumed": [str(a) for a in run.get("assumed", [])],         # values that were not measured
         "processing_seconds": round(time.perf_counter() - t0, 3),
     }
     if log_path:
