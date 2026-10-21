@@ -90,8 +90,31 @@ def load_notebooks(repo_dir, resolver, commits):
     return rows
 
 
+def load_code_changes(resolver, commits):
+    """One activity per code file a commit changed, holding the lines it ADDED (.py / .R),
+    so the classifier and the drift detector see the code itself, not only the commit message.
+    Commits extracted before code_added existed simply give none (re-extract with --refresh)."""
+    rows = []
+    for c in commits:
+        if is_noise(c):
+            continue
+        member_id = resolver.get_id(c["author_name"], c["author_email"])
+        for path, added in (c.get("code_added") or {}).items():
+            rows.append({
+                "activity_id": f"code:{resolver.team_id}:{c['sha'][:12]}:{path}",
+                "team_id": resolver.team_id,
+                "source": "code_change",
+                "member_id": member_id,
+                "ts": to_utc(c["timestamp"]),
+                "text": resolver.scrub(f"File: {path}\n{added}"),
+                "meta": {"file": path, "commit": c["sha"][:12], "cell_type": "code"},
+            })
+    return rows
+
+
 def load_repo(repo_dir):
     resolver = MemberResolver(team_id=repo_dir.name)
     commit_rows, commits = load_commits(repo_dir, resolver)
     cell_rows = load_notebooks(repo_dir, resolver, commits)
-    return commit_rows, cell_rows
+    code_rows = load_code_changes(resolver, commits)
+    return commit_rows, cell_rows, code_rows

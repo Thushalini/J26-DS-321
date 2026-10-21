@@ -32,6 +32,12 @@ SEARCH_QUERIES = [
     "machine learning group project language:Jupyter-Notebook",
     "kaggle competition team language:Jupyter-Notebook",
     "data science team project language:Jupyter-Notebook",
+    # round 2
+    "machine learning model evaluation project language:Jupyter-Notebook",
+    "mlops team project language:Jupyter-Notebook",
+    "deep learning group project language:Jupyter-Notebook",
+    "student machine learning project metrics language:Jupyter-Notebook",
+    "data science group assignment language:Jupyter-Notebook",
 ]
 
 MIN_CONTRIBUTORS = 2
@@ -40,10 +46,17 @@ MIN_STARS = 0
 RESULTS_PER_QUERY = 30
 
 
-def api_get(url, params=None, max_retries=3):
-    """GET with rate-limit handling. Returns the response, or None if it keeps failing."""
-    for attempt in range(max_retries):
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
+def api_get(url, params=None, max_retries=4):
+    """GET with retries: waits and tries again on network timeouts and on rate limits.
+    Returns the response, or None if it keeps failing."""
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.get(url, headers=HEADERS, params=params, timeout=60)
+        except requests.exceptions.RequestException as e:      # timeout, dropped connection, ...
+            wait = 10 * attempt
+            print(f"    Network problem ({type(e).__name__}), retry {attempt}/{max_retries} in {wait}s ...")
+            time.sleep(wait)
+            continue
         if resp.status_code == 200:
             return resp
         if resp.status_code == 403 and "rate limit" in resp.text.lower():

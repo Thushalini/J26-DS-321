@@ -116,6 +116,11 @@ export default function TeamsPage() {
     await loadDetail(team!.team_id)
   }, "Saved. Run a sync (Behavior tab) so your commits are credited to you.")
 
+  const linkAuthor = (userId: string, identity: string) => run(async () => {
+    await api(`/app/teams/${team!.team_id}/link`, { method: "POST", json: { user_id: userId, identity } })
+    await loadDetail(team!.team_id)
+  }, "Linked. Run a sync (Behavior tab) so those commits are credited to that member.")
+
   const saveRepo = () => run(async () => {
     await api(`/app/teams/${team!.team_id}`, { method: "PUT", json: { repo_url: repo } })
     await Promise.all([loadDetail(team!.team_id), refreshTeams()])
@@ -125,6 +130,8 @@ export default function TeamsPage() {
   const research = teams.filter((t) => t.is_research)
   const me = detail?.members.find((m) => m.is_me)
   const canEditRepo = detail && !detail.is_research && (detail.my_role === "lead" || detail.my_role === "supervisor")
+  const canLink = canEditRepo
+  const linkable = detail?.members.filter((m) => m.user_id && m.member_code) ?? []
 
   return (
     <div className="flex flex-col gap-4">

@@ -23,15 +23,24 @@ from sklearn.preprocessing import StandardScaler
 import joblib
 
 from component2.classify.keyword_baseline import PATTERNS
-from component2.config import MODEL_DIR
+from component2.config import LABEL_DIR, MODEL_DIR
 from component2.db import connect, save_labels
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 MAX_CHARS = 1000            # MiniLM reads ~256 words; longer text is cut anyway
 
 
+# A changed .py / .R file is code, like a notebook code cell; the gold labels have no raw code changes,
+# so the model sees them as the closest source it was trained on.
+TRAINED_AS = {"code_change": "notebook_cell"}
+
+
+def as_trained(source):
+    return TRAINED_AS.get(source, source)
+
+
 def model_input(source, text):
-    return f"[{source}] {text[:MAX_CHARS]}"     # telling the model where text came from helps it
+    return f"[{as_trained(source)}] {text[:MAX_CHARS]}"     # telling the model where text came from helps it
 
 
 def get_embeddings(conn):
@@ -66,6 +75,7 @@ def structure_features(conn, ids):
     rows = []
     for aid in ids:
         source, cell_type, text = info[aid]
+        source = as_trained(source)
         hits = [sum(1 for p in pats if p.search(text)) for pats in PATTERNS.values()]
         rows.append([source == s for s in SOURCES] + [cell_type == "markdown", len(text) < 40] + hits)
     return np.array(rows, dtype=float)
@@ -110,6 +120,18 @@ def main():
     print(f"Macro F1  MiniLM + LogReg (text only)   : {f1_score(y, y_text, average='macro', zero_division=0):.3f}")
     print(f"Macro F1  MiniLM + structure + tuned C  : {f1_score(y, y_pred, average='macro', zero_division=0):.3f}   (target >= 0.75)")
     print(f"Accuracy  final model                   : {np.mean(y_pred == y):.3f}")
+
+    # Round 2 items were chosen on purpose (rare stages), so also report the score on the
+    # round 1 items only - that sample was random, so it is the fair, unbiased estimate.
+    import csv
+    r1_file = LABEL_DIR / "rater1.csv"
+    if r1_file.exists() and (LABEL_DIR / "rater1_round2.csv").exists():
+        with open(r1_file, newline="", encoding="utf-8-sig") as f:
+            round1 = {row["activity_id"] for row in csv.DictReader(f)}
+        mask = np.array([i in round1 for i in gold_ids])
+        if mask.any():
+            print(f"Macro F1  final model, round-1 items only (random sample): "
+                  f"{f1_score(y[mask], y_pred[mask], average='macro', zero_division=0):.3f}  ({mask.sum()} items)")
 
     # Human ceiling: how well does one rater "predict" the other? A model can hardly beat this.
     r1 = dict(conn.execute("SELECT activity_id, stage FROM stage_labels WHERE labeller='rater1'").fetchall())

@@ -2,7 +2,8 @@
 Step 3b: Drift detector (FR05, FR06).
 
 For each team and each blueprint decision (target / algorithm / metric):
-  1. Collect what the team mentioned in the recent window (mentions.py).
+  1. Collect what the team mentioned in the recent window (mentions.py): commit messages,
+     notebook cells, chat AND the code lines each commit added to .py / .R files.
   2. Compare each mentioned term with the planned value using MiniLM
      cosine similarity. A term counts as "on plan" if similarity >= MATCH_AT
      (so "RF" or "RandomForestClassifier" still match "Random Forest").
@@ -11,6 +12,8 @@ For each team and each blueprint decision (target / algorithm / metric):
 
 If a team has no blueprint file (public GitHub repos don't), one is INFERRED
 from the first 40% of its timeline: "what they did early on = what they planned".
+A blueprint file that can't be read is NOT replaced: every decision is reported as 'no_plan'
+until someone fixes it (api/contract.py describes what a valid blueprint looks like).
 
 Run from backend:
     python -m component2.drift.detect_drift            (all teams, last 30 days of each)
@@ -18,9 +21,10 @@ Run from backend:
 """
 import argparse
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
+from component2.api.contract import clean_plan
 from component2.config import BLUEPRINT_DIR
 from component2.db import connect, save_drift
 from component2.drift.mentions import count_mentions, find_mentions, normalise_target
@@ -43,14 +47,30 @@ def severity_of(score):
             return name
 
 
+def texts_of(rows):
+    """rows: (ts, text, source, meta). A commit's changed code files are joined into ONE text,
+    so a name used in several files of the same commit counts once, like in a commit message."""
+    texts, code = [], defaultdict(list)
+    for _, text, source, meta in rows:
+        if source == "code_change":
+            code[json.loads(meta or "{}").get("commit")].append(text)
+        else:
+            texts.append(text)
+    return texts + ["\n".join(files) for files in code.values()]
+
+
 def load_or_infer_blueprint(team_id, rows):
     path = BLUEPRINT_DIR / f"{team_id}.json"
     if path.exists():
-        bp = json.loads(path.read_text(encoding="utf-8"))
-        return {d: (bp.get(d) or {}).get("name") for d in DIMENSIONS}, "file"
+        try:
+            bp = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print(f"WARNING: {path.name} is not valid JSON - drift reported as 'no_plan' until it is fixed")
+            return clean_plan(None), "invalid_file"
+        return clean_plan(bp if isinstance(bp, dict) else None), "file"
 
     early = rows[: max(1, int(len(rows) * EARLY_SHARE))]
-    seen = count_mentions(text for _, text in early)
+    seen = count_mentions(texts_of(early))
     planned = {d: (seen[d].most_common(1)[0][0] if seen[d] else None) for d in DIMENSIONS}
     BLUEPRINT_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"team_id": team_id, "_inferred_from_early_activity": True,
@@ -92,7 +112,8 @@ def score_dimension(dim, planned, seen: Counter):
 
 def detect_team(conn, team_id, days, planned=None):
     """planned: {dimension: value} from the app's blueprint (real teams). None = file or inferred (research)."""
-    rows = conn.execute("SELECT ts, text FROM activities WHERE team_id = ? ORDER BY ts", (team_id,)).fetchall()
+    rows = conn.execute("SELECT ts, text, source, meta FROM activities WHERE team_id = ? ORDER BY ts",
+                        (team_id,)).fetchall()
     if not rows:
         return []
     if planned is None:
@@ -101,8 +122,7 @@ def detect_team(conn, team_id, days, planned=None):
         bp_source = "app"
     window_end = parse_ts(rows[-1][0])
     window_start = window_end - timedelta(days=days)
-    recent = [text for ts, text in rows if parse_ts(ts) >= window_start]
-    seen = count_mentions(recent)
+    seen = count_mentions(texts_of([r for r in rows if parse_ts(r[0]) >= window_start]))
 
     results = []
     for dim in DIMENSIONS:
