@@ -35,9 +35,11 @@ def _probability(model, project: pd.Series) -> float:
 
 
 def _reasons(action: dict, weak: dict, recurring_causes: dict) -> list[str]:
-    reasons = [f"{name.replace('_', ' ')} is lowering the probability by {abs(points):.1f} pts"
+    text = SETTINGS["text"]
+    reasons = [text["weak"].format(label=config.FEATURE_LABELS.get(name, name), points=abs(points))
                for name, points in weak.items() if name in action["when_weak"]]
-    reasons += [f"recurring issue pattern: {cause.replace('_', ' ')} ({count} issues)"
+    reasons += [text["pattern"].format(cause=cause.replace("_", " "), count=count,
+                                       unit=text["issue"] if count == 1 else text["issues"])
                 for cause, count in recurring_causes.items() if cause in action["when_pattern"]]
     return reasons
 

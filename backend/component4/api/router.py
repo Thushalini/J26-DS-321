@@ -4,13 +4,29 @@
   GET  /c4/features   the features the model expects, with labels and scales
   POST /c4/predict    one project's features -> probability, explanation, forecast, recommendations
   GET  /c4/demo       the same for a held-out synthetic project (for the Predict screen before real data)
+  GET  /c4/teams/{team_id}/prediction   a real team's prediction from its saved Component 2 and 3 data and its
+                                       repo's readiness; no number until enough signals come from the team
+  GET|POST /c4/teams/{team_id}/sheets   saved score sheets per member (anyone in the group); DELETE .../sheets/{uid}
+  POST /c4/teams/{team_id}/helpers      saved sheets -> who could help with each weak stage
 
-Academic marks are not accepted here: the prediction never uses them.
+Academic marks never reach the prediction: they are only used by the helper suggestions and are never shown.
 """
-from fastapi import APIRouter, HTTPException
+import base64
+import binascii
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from buddy.access import require, require_live, team_access
+from buddy.auth import current_user, get_conn
+
 from ..common import config
+from ..m1_feature_integration.team_sources import team_project
+from ..m6_improvement import history
+from ..m6_improvement.competency.scoring import competency, suggest_helpers
+from ..m6_improvement.competency import store as sheet_store
+from ..m6_improvement.competency.sheets import SheetError, parse_sheet
+from ..m6_improvement.weak_stages import weak_stages
 from ..synthetic.feature_spec import FEATURES
 from . import service
 
@@ -62,3 +78,124 @@ def predict(body: PredictRequest):
 def demo():
     bundle = _ready()
     return service.predict(service.demo_project(bundle), source="synthetic", bundle=bundle)
+
+
+@router.get("/teams/{team_id}/prediction")
+def team_prediction(team_id: str, user=Depends(current_user), conn=Depends(get_conn)):
+    team_access(conn, user, team_id)
+    bundle = _ready()
+    project = team_project(conn, team_id)
+    readiness = project["readiness"]
+    signals = len(FEATURES) - len(project["missing"])
+    about = {"team_id": team_id, "signals_from_team": signals, "total_signals": len(FEATURES),
+             "min_signals": config.API["min_team_signals"], "lagging_stages": project["lagging_stages"]}
+
+    if signals < config.API["min_team_signals"]:
+        return {**about, "enough_data": False, "source": "live", "model_version": bundle.get("version"),
+                "evaluated_at": service.now(), "probability": None, "factors": [], "forecast": [],
+                "recommendations": [], "readiness": readiness, "history": [], "changes": None,
+                "imputed_features": project["missing"],
+                "weak_stages": weak_stages(project["lagging_stages"], project["recurring_causes"], [], readiness)}
+
+    result = service.predict(project["features"], project["recurring_causes"], "live", True, bundle, readiness,
+                             project["recurring_counts"])
+    history.record(conn, team_id, result, project["features"])
+    saved = history.recent(conn, team_id, result["model_version"])
+    return {**result, **about, "enough_data": True,
+            "history": [row["probability"] for row in saved], "changes": history.changes(saved),
+            "weak_stages": weak_stages(project["lagging_stages"], project["recurring_causes"],
+                                       result["recommendations"], readiness)}
+
+
+class Sheet(BaseModel):
+    member_user_id: str
+    content_base64: str
+
+
+class HelpersRequest(BaseModel):
+    stages: list[str] | None = None
+
+
+def _decode(sheet: Sheet) -> bytes:
+    try:
+        data = base64.b64decode(sheet.content_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(422, "A score sheet could not be read. Upload the PDF again.")
+    if len(data) > config.COMPETENCY["max_sheet_bytes"]:
+        raise HTTPException(413, "A score sheet is too large.")
+    return data
+
+
+def _group(conn, user, team_id, action):
+    team, my_role = team_access(conn, user, team_id)
+    require_live(team, action)
+    require(my_role, tuple(config.COMPETENCY["group_roles"]), action)
+    return team
+
+
+def _members(conn, team_id) -> dict[str, str]:
+    roles = config.COMPETENCY["member_roles"]
+    marks = ", ".join("?" for _ in roles)
+    return dict(conn.execute(f"SELECT m.user_id, u.name FROM team_members m JOIN users u ON u.user_id = m.user_id "
+                             f"WHERE m.team_id = ? AND m.team_role IN ({marks}) ORDER BY u.name", (team_id, *roles)).fetchall())
+
+
+def _sheet_list(conn, team_id) -> list[dict]:
+    dates = sheet_store.saved_dates(conn, team_id)
+    return [{"user_id": uid, "name": name, "saved": uid in dates, "uploaded_at": dates.get(uid)}
+            for uid, name in _members(conn, team_id).items()]
+
+
+@router.get("/teams/{team_id}/sheets")
+def list_sheets(team_id: str, user=Depends(current_user), conn=Depends(get_conn)):
+    _group(conn, user, team_id, "see saved score sheets")
+    return _sheet_list(conn, team_id)
+
+
+@router.post("/teams/{team_id}/sheets")
+def upload_sheet(team_id: str, body: Sheet, user=Depends(current_user), conn=Depends(get_conn)):
+    _group(conn, user, team_id, "upload score sheets")
+    names = _members(conn, team_id)
+    if body.member_user_id not in names:
+        raise HTTPException(422, "A sheet must belong to a member of this group.")
+    try:
+        modules = parse_sheet(_decode(body))
+    except SheetError as error:
+        raise HTTPException(422, f"{names[body.member_user_id]}'s sheet: {error}")
+    sheet_store.save(conn, team_id, body.member_user_id, modules, user["user_id"])
+    return _sheet_list(conn, team_id)
+
+
+@router.delete("/teams/{team_id}/sheets/{member_user_id}")
+def delete_sheet(team_id: str, member_user_id: str, user=Depends(current_user), conn=Depends(get_conn)):
+    _group(conn, user, team_id, "remove score sheets")
+    sheet_store.delete(conn, team_id, member_user_id)
+    return _sheet_list(conn, team_id)
+
+
+@router.post("/teams/{team_id}/helpers")
+def team_helpers(team_id: str, body: HelpersRequest, user=Depends(current_user), conn=Depends(get_conn)):
+    _group(conn, user, team_id, "suggest helpers")
+    names = _members(conn, team_id)
+    saved = {uid: modules for uid, modules in sheet_store.load_all(conn, team_id).items() if uid in names}
+    if not saved:
+        raise HTTPException(422, "No score sheets saved for this group yet. Upload at least one first.")
+
+    if body.stages is None:
+        project = team_project(conn, team_id)
+        stages = [w["stage"] for w in weak_stages(project["lagging_stages"], project["recurring_causes"], [],
+                                                  project["readiness"])]
+    else:
+        stages = body.stages
+    unknown = sorted(set(stages) - set(config.STAGE_LABELS))
+    if unknown:
+        raise HTTPException(422, f"Unknown lifecycle stages: {', '.join(unknown)}.")
+
+    members = {uid: {"name": names[uid], "competency": competency(modules)} for uid, modules in saved.items()}
+    return {
+        "team_id": team_id,
+        "stages_source": "chosen" if body.stages is not None else "detected",
+        "suggestions": suggest_helpers(stages, members, config.STAGE_LABELS),
+        "sheets_used": len(members),
+        "note": "Marks are never shown, only the suggested person.",
+    }

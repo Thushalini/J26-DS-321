@@ -131,6 +131,8 @@ FAILURE_PATTERNS = {
 }
 
 RECOMMENDATIONS = {
+    "text": {"weak": "{label}: lowering the probability by {points:.1f} pts",
+             "pattern": "recurring issue pattern: {cause} ({count} {unit})", "issue": "issue", "issues": "issues"},
     "top_n": 3,
     "weak_at_points": -1.0,
     "min_gain_points": 0.5,
@@ -261,4 +263,100 @@ API = {
     "forecast_simulations": 200,
     "demo_project_index": 0,
     "background_size": 50,
+    "min_team_signals": 5,
+}
+
+HISTORY = {
+    "points": 8,
+    "changed_at_least": {"unit": 0.05, "count": 1, "score100": 5},
+}
+
+READINESS = {
+    "status": "draft",
+    "max_score": 100,
+    "weak_below": 40,
+    "text": {"found": "Found: {items}.", "missing": "Not found in the repository: {items}."},
+    "areas": {
+        "versioning": {
+            "label": "Model versioning",
+            "stage": "deployment_mlops",
+            "criteria": {
+                "dependencies": {"text": "dependencies listed", "points": 1, "patterns": [
+                    r"(^|/)requirements[^/]*\.txt$", r"(^|/)environment\.ya?ml$", r"(^|/)pyproject\.toml$",
+                    r"(^|/)(pipfile|poetry)\.lock$", r"(^|/)setup\.py$"]},
+                "data_versioning": {"text": "data or models versioned (DVC or similar)", "points": 1, "patterns": [
+                    r"\.dvc$", r"(^|/)dvc\.(yaml|lock)$", r"(^|/)\.dvc/"]},
+                "experiment_tracking": {"text": "experiments tracked (MLflow, W&B or similar)", "points": 1, "patterns": [
+                    r"(^|/)mlruns/", r"(^|/)mlproject$", r"mlflow", r"(^|/)wandb/", r"(^|/)\.neptune/"]},
+            },
+        },
+        "monitoring": {
+            "label": "Monitoring and drift detection",
+            "stage": "deployment_mlops",
+            "criteria": {
+                "monitoring": {"text": "monitoring or drift checks", "points": 1, "patterns": [
+                    r"monitor", r"drift", r"evidently", r"whylogs"]},
+                "data_validation": {"text": "data validation", "points": 1, "patterns": [
+                    r"data_?validation", r"validate_?data", r"great_expectations", r"pandera",
+                    r"(^|/)expectations/", r"(^|/)schemas?/"]},
+                "alerts_logging": {"text": "alerts or logging set up", "points": 1, "patterns": [
+                    r"prometheus", r"grafana", r"alertmanager", r"(^|/)alerts?\.(py|ya?ml)$",
+                    r"(^|/)logging\.(conf|ini|ya?ml|json)$"]},
+            },
+        },
+        "pipeline": {
+            "label": "Pipeline robustness",
+            "stage": "deployment_mlops",
+            "criteria": {
+                "tests": {"text": "automated tests", "points": 1, "patterns": [
+                    r"(^|/)tests?/", r"(^|/)test_[^/]*\.py$", r"_test\.py$", r"(^|/)conftest\.py$", r"(^|/)pytest\.ini$"]},
+                "ci": {"text": "continuous integration", "points": 1, "patterns": [
+                    r"(^|/)\.github/workflows/[^/]+\.ya?ml$", r"(^|/)\.gitlab-ci\.yml$", r"(^|/)jenkinsfile$",
+                    r"(^|/)azure-pipelines\.ya?ml$", r"(^|/)\.circleci/"]},
+                "scripted_pipeline": {"text": "scripted pipeline or config files", "points": 1, "patterns": [
+                    r"(^|/)dvc\.yaml$", r"(^|/)makefile$", r"(^|/)pipelines?/", r"(^|/)pipeline[^/]*\.py$",
+                    r"(^|/)dags/", r"(^|/)params\.ya?ml$", r"(^|/)configs?/[^/]+\.(ya?ml|json|toml)$"]},
+                "container": {"text": "container setup", "points": 1, "patterns": [
+                    r"(^|/)dockerfile", r"(^|/)(docker-)?compose\.ya?ml$", r"(^|/)\.devcontainer/"]},
+            },
+        },
+        "documentation": {
+            "label": "Documentation",
+            "stage": "documentation",
+            "criteria": {
+                "readme": {"text": "README", "points": 1, "patterns": [r"(^|/)readme(\.[a-z]+)?$"]},
+                "docs": {"text": "docs folder", "points": 1, "patterns": [r"(^|/)docs?/", r"(^|/)mkdocs\.ya?ml$"]},
+                "model_card": {"text": "model or data card", "points": 1, "patterns": [
+                    r"model[_-]?card", r"data[_-]?card", r"datasheet"]},
+            },
+        },
+    },
+}
+
+COMPETENCY = {
+    "module_stages_file": BASE_DIR / "m6_improvement" / "competency" / "module_stages.json",
+    "grade_points": {
+        "A+": 4.0, "A": 4.0, "A-": 3.7, "B+": 3.3, "B": 3.0, "B-": 2.7,
+        "C+": 2.3, "C": 2.0, "C-": 1.7, "D+": 1.3, "D": 1.0, "E": 0.0, "F": 0.0,
+    },
+    "max_points": 4.0,
+    "min_evidence": 2.0,
+    "max_sheets": 10,
+    "max_sheet_bytes": 2_000_000,
+    "group_roles": ["lead", "member", "supervisor"],
+    "member_roles": ["lead", "member"],
+}
+
+CAUSE_STAGES = {
+    "overfitting": ["model_development", "model_evaluation"],
+    "stalled": ["model_development"],
+    "data_leakage": ["data_cleaning", "feature_engineering"],
+    "resource_bottleneck": ["deployment_mlops"],
+    "premature_evaluation": ["model_evaluation"],
+}
+
+TEAM_SOURCES = {
+    "c2_window_days": 30,
+    "c2_roles_window": "30d",
+    "min_stage_items": 20,
 }

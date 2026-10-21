@@ -39,33 +39,40 @@ def _row(features: dict, medians: dict) -> tuple[pd.Series, list[str]]:
     return pd.Series(values), imputed
 
 
-def _factor(item: dict) -> dict:
+def _factor(item: dict, measured: bool) -> dict:
     name = item["feature"]
     label = config.FEATURE_LABELS.get(name, name)
     value = round(item["value"], 3)
     return {"id": name, "label": label, "value": value, "contribution": item["contribution_points"],
-            "detail": f"{label}: {value} {config.KIND_TEXT[get(name).kind]}."}
+            "measured": measured, "detail": f"{label}: {value} {config.KIND_TEXT[get(name).kind]}."}
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def predict(features: dict, recurring_causes: list[str] | None = None, source: str = "live",
-            with_forecast: bool = True, bundle: dict | None = None) -> dict:
+            with_forecast: bool = True, bundle: dict | None = None, readiness: dict | None = None,
+            recurring_counts: dict[str, int] | None = None) -> dict:
+    """Recommendations only use measured signals: a typical value filled in for a missing one is not evidence."""
     bundle = bundle or load_bundle()
     model = bundle["model"]
     row, imputed = _row(features, bundle["medians"])
     frame = row.to_frame().T
 
     explanation = local_explanation(shap_values(model, bundle["background"], frame), 0)
-    recurring = [{"causes": [cause], "issues": 1} for cause in recurring_causes or []]
-    suggestions = recommend(model, row, explanation["factors"], recurring)
+    recurring = [{"causes": [cause], "issues": (recurring_counts or {}).get(cause, 1)} for cause in recurring_causes or []]
+    measured = [item for item in explanation["factors"] if item["feature"] not in imputed]
+    suggestions = recommend(model, row, measured, recurring)
     cone = forecast(model, row, settings={"simulations": config.API["forecast_simulations"]}) if with_forecast else []
 
     return {
         "source": source,
         "model_version": bundle.get("version"),
-        "evaluated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "evaluated_at": now(),
         "probability": round(explanation["probability"] * config.EXPLAINABILITY["probability_to_points"], 1),
         "base_probability": round(explanation["base_probability"] * config.EXPLAINABILITY["probability_to_points"], 1),
-        "factors": [_factor(item) for item in explanation["factors"]],
+        "factors": [_factor(item, item["feature"] not in imputed) for item in explanation["factors"]],
         "forecast": cone,
         "recommendations": [
             {"id": s["id"], "title": s["title"], "reason": s["reason"],
@@ -73,7 +80,7 @@ def predict(features: dict, recurring_causes: list[str] | None = None, source: s
              "expected_gain": s["expected_gain_points"]}
             for s in suggestions
         ],
-        "readiness": None,
+        "readiness": readiness,
         "history": [],
         "imputed_features": imputed,
     }

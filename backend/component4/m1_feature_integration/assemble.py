@@ -8,7 +8,8 @@ from . import c1_adapter, c2_adapter, c3_adapter
 
 
 def assemble(blueprint: dict | None = None, c2_summary: dict | None = None, c2_roles: dict | None = None,
-             c3_runs: list[dict] | None = None, project_health: dict | None = None) -> dict:
+             c3_runs: list[dict] | None = None, project_health: dict | None = None,
+             readiness: dict | None = None) -> dict:
     features, context = {}, {}
     if blueprint is not None:
         part = c1_adapter.project_features(blueprint)
@@ -22,6 +23,8 @@ def assemble(blueprint: dict | None = None, c2_summary: dict | None = None, c2_r
         part = c3_adapter.project_features(c3_runs)
         features.update(part["features"])
         context["c3"] = part["context"]
+    if readiness is not None:
+        features["mlops_readiness_score"] = float(readiness["score"])
     features.update({k: v for k, v in (project_health or {}).items() if k in feature_names()})
 
     row = {name: features.get(name) for name in feature_names()}
