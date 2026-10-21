@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
-import MemberName from "./MemberName";
+import MemberName, { memberLabel } from "./MemberName";
 import PlotlyChart from "./PlotlyChart";
 import styles from "./c2.module.css";
 import { STAGE_LABEL, topStagesText, windowMixChart } from "./charts";
@@ -36,11 +36,12 @@ export default function RolesCard({ teamId, names = {}, version = 0 }: { teamId:
   }, [teamId, windowKey, version]);
 
   const chart = useMemo(
-    () => (data ? windowMixChart(data.members.map((m) => ({ ...m, member_id: names[m.member_id] ?? m.member_id })), "light") : null),
+    () => (data ? windowMixChart(data.members.map((m) => ({ ...m, member_id: memberLabel(m.member_id, names) })), "light") : null),
     [data, names],
   );
   const active = data?.members.filter((m) => m.evidence !== "none") ?? [];
   const idle = data?.members.filter((m) => m.evidence === "none") ?? [];
+  const unnamed = data?.members.some((m) => !names[m.member_id]) ?? false;
 
   return (
     <section className={styles.card} aria-labelledby="roles-window-title">
@@ -66,6 +67,12 @@ export default function RolesCard({ teamId, names = {}, version = 0 }: { teamId:
           <p className={styles.why}>{data.start.slice(0, 10)} to {data.end.slice(0, 10)}</p>
           {active.length > 0 && chart && (
             <PlotlyChart data={chart.data} layout={chart.layout} ariaLabel="Stacked bar chart of each member's work per stage in the chosen window" />
+          )}
+          {unnamed && (
+            <p className={styles.why}>
+              Each M-xxxxxx code is one team member. A name appears next to a code once that member has
+              signed up and linked their git name or email.
+            </p>
           )}
           <ul className={styles.memberList}>
             {active.map((m) => (

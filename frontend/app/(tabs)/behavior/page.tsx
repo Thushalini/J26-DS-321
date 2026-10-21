@@ -96,7 +96,7 @@ export default function BehaviorPage() {
 
   if (!team) return null;
   const showWho = detail && !detail.is_research && !detail.anonymised
-    && (detail.my_role === "lead" || detail.my_role === "supervisor");
+    && (detail.my_role === "lead" || detail.my_role === "member" || detail.my_role === "supervisor");
 
   return (
     <div className={styles.root}>
