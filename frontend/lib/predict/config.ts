@@ -65,7 +65,8 @@ export const predictCopy = {
   },
   readiness: {
     title: "MLOps readiness",
-    description: "Draft rubric across four areas, scored from the file names in the group's repository.",
+    description: "Draft rubric across four areas. Buddy reads the group's key repo files: README, tests, CI, requirements and Dockerfile.",
+    namesOnly: "Draft rubric across four areas, from file names only: GitHub couldn't be read, so file contents weren't checked.",
     outOf: "out of",
   },
   recommendations: {

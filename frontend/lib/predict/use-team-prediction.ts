@@ -14,7 +14,7 @@ type ApiPrediction = {
   factors: { id: string; label: string; contribution: number; detail: string; measured?: boolean }[]
   forecast: ForecastPoint[]
   recommendations: { id: string; title: string; reason: string; area: string; expected_gain: number }[]
-  readiness: { score: number; areas: ReadinessArea[] } | null
+  readiness: { score: number; areas: ReadinessArea[]; basis?: "contents" | "names" } | null
   imputed_features: string[]
   history?: number[]
   changes?: { since: string; probability_change: number; signals: { id: string; label: string; before: number; after: number }[] } | null
@@ -37,6 +37,7 @@ export function toPrediction(body: ApiPrediction): Prediction {
     forecast: body.forecast,
     readiness: body.readiness && {
       score: body.readiness.score,
+      basis: body.readiness.basis,
       areas: body.readiness.areas.map(({ id, label, score, reason }) => ({ id, label, score, reason })),
     },
     changes: body.changes && {

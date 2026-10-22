@@ -107,7 +107,7 @@ export function ReadinessCard({ prediction }: { prediction: Prediction }) {
   return (
     <SectionCard
       title={predictCopy.readiness.title}
-      description={predictCopy.readiness.description}
+      description={readiness.basis === "names" ? predictCopy.readiness.namesOnly : predictCopy.readiness.description}
       aside={<ReadinessScore score={readiness.score} />}
     >
       <Readiness score={readiness.score} areas={readiness.areas} />

@@ -46,6 +46,7 @@ export type Prediction = {
   readiness: {
     score: number
     areas: ReadinessArea[]
+    basis?: "contents" | "names"
   } | null
   recommendations: Recommendation[]
   enoughData: boolean
