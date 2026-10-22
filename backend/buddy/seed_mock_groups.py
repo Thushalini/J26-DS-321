@@ -58,7 +58,7 @@ def add(conn, supervisor_id):
 def remove(conn):
     pattern = f"{PREFIX}%"
     for table in ("component3_alerts", "component4_prediction_history", "component4_competency_sheets",
-                  "component4_milestone_results",
+                  "component4_milestone_results", "component4_repo_scans",
                   "panel_reviews", "team_members", "teams"):
         try:
             conn.execute(f"DELETE FROM {table} WHERE team_id LIKE ?", (pattern,))

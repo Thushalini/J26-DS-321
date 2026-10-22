@@ -36,9 +36,12 @@ ALLOWED_TRANSITIONS: dict[DecisionStatus, set[DecisionStatus]] = {
         DecisionStatus.FINALIZED,
         DecisionStatus.REJECTED,
         DecisionStatus.SUPERSEDED,
+        DecisionStatus.PENDING_FIX,      # Domino validation: an earlier choice it depends on changed
     },
     DecisionStatus.FINALIZED: {DecisionStatus.SUPERSEDED, DecisionStatus.PENDING_FIX},
-    DecisionStatus.PENDING_FIX: {DecisionStatus.FINALIZED, DecisionStatus.SUPERSEDED},
+    # After a re-check the decision goes back to what it was, is re-confirmed, or is replaced.
+    DecisionStatus.PENDING_FIX: {DecisionStatus.CONFIRMED, DecisionStatus.FINALIZED, DecisionStatus.SUPERSEDED,
+                                 DecisionStatus.REJECTED},
     DecisionStatus.REJECTED: set(),
     DecisionStatus.SUPERSEDED: set(),
 }
@@ -70,11 +73,20 @@ def apply_event(state: Blueprint, event: Event) -> Blueprint:
         d = Decision.model_validate(p["decision"])
         new.decisions[d.decision_id] = d
 
-    elif event.event_type == EventType.DECISION_STATUS_CHANGED:
+    elif event.event_type in (EventType.DECISION_STATUS_CHANGED, EventType.DECISION_UPDATED):
         d = new.decisions[p["decision_id"]]
-        d.status = DecisionStatus(p["new_status"])
+        if event.event_type == EventType.DECISION_STATUS_CHANGED:
+            d.status = DecisionStatus(p["new_status"])
         if "agreed_by" in p:
             d.agreed_by = list(p["agreed_by"])
+        if "objected_by" in p:
+            d.objected_by = list(p["objected_by"])
+        if "rationale" in p:
+            d.rationale = p["rationale"]
+        if "pending_reason" in p:
+            d.pending_reason = p["pending_reason"]
+        if "held_status" in p:
+            d.held_status = DecisionStatus(p["held_status"]) if p["held_status"] else None
         d.updated_at = event.created_at
 
     elif event.event_type == EventType.SCORES_UPDATED:
@@ -103,6 +115,15 @@ class EventStore:
         self.project_id = project_id
         self._events: list[Event] = []
         self._state = Blueprint(project_id=project_id)
+
+    @classmethod
+    def from_events(cls, project_id: str, events: list[Event]) -> "EventStore":
+        """Rebuild a store from events that were saved earlier (for example after a restart)."""
+        store = cls(project_id)
+        ordered = sorted(events, key=lambda e: e.version)
+        store._state = replay(project_id, ordered)
+        store._events = ordered
+        return store
 
     # -- read access (copies, so callers cannot change history by accident)
     @property
@@ -166,9 +187,15 @@ class EventStore:
         new_status: DecisionStatus,
         actor: str,
         agreed_by: Optional[list[str]] = None,
+        **extra,
     ) -> Event:
+        """extra may carry objected_by, rationale, pending_reason and held_status, changed together with the status."""
         if decision_id not in self._state.decisions:
             raise KeyError(f"unknown decision {decision_id}")
+        extra = {k: (v.value if hasattr(v, "value") else v) for k, v in extra.items()}
+        bad = set(extra) - {"objected_by", "rationale", "pending_reason", "held_status"}
+        if bad:
+            raise ValueError(f"cannot change {sorted(bad)} with a status change")
         old_status = self._state.decisions[decision_id].status
         if new_status not in ALLOWED_TRANSITIONS[old_status]:
             raise ValueError(f"cannot move a decision from {old_status.value} to {new_status.value}")
@@ -179,7 +206,22 @@ class EventStore:
         }
         if agreed_by is not None:
             payload["agreed_by"] = agreed_by
+        payload.update(extra)
         return self._append(EventType.DECISION_STATUS_CHANGED, payload, actor)
+
+    def update_decision(self, decision_id: str, actor: str, **changes) -> Event:
+        """Change who agreed / objected, the reason, or the re-check note, WITHOUT changing the status.
+        changes: agreed_by, objected_by, rationale, pending_reason, held_status."""
+        if decision_id not in self._state.decisions:
+            raise KeyError(f"unknown decision {decision_id}")
+        allowed = {"agreed_by", "objected_by", "rationale", "pending_reason", "held_status"}
+        unknown = set(changes) - allowed
+        if unknown:
+            raise ValueError(f"cannot update {sorted(unknown)}")
+        if not changes:
+            raise ValueError("nothing to update")
+        payload = {"decision_id": decision_id, **{k: (v.value if hasattr(v, "value") else v) for k, v in changes.items()}}
+        return self._append(EventType.DECISION_UPDATED, payload, actor)
 
     def update_scores(
         self,

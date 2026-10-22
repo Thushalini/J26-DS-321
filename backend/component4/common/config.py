@@ -284,6 +284,32 @@ MILESTONE_RESULTS = {
     "max_name": 80,
 }
 
+REPO_SCAN = {
+    "refresh_hours": 24,
+    "timeout_seconds": 6,
+    "parallel_reads": 8,
+    "max_file_bytes": 300_000,
+    "api": "https://api.github.com",
+    "raw": "https://raw.githubusercontent.com",
+    "token_env": "GITHUB_TOKEN",
+    "max_files": {"tests": 10, "workflows": 3, "requirements": 3, "docker": 2, "scripts": 8, "notebooks": 3, "readme": 1},
+    "readme_min_words": 100,
+    "lock_files": [r"(^|/)poetry\.lock$", r"(^|/)pipfile\.lock$", r"(^|/)conda-lock", r"(^|/)renv\.lock$", r"(^|/)uv\.lock$"],
+    "patterns": {
+        "test_function": r"(?m)^\s*(async\s+)?def\s+test_\w*\s*\(",
+        "ci_test_command": r"pytest|python -m unittest|\btox\b|\bnox\b|npm (run )?test|make test|coverage run",
+        "readme_usage": r"(?im)^#+.*(install|set ?up|usage|getting started|quick ?start|how to|running|\brun\b)|"
+                        r"pip3? install|npm (install|ci)|conda (env )?create|poetry install|uv sync|docker compose up|"
+                        r"python -m |streamlit run|uvicorn |jupyter (notebook|lab)",
+        "docker_from": r"(?im)^\s*FROM\s",
+        "docker_install": r"pip3? install|conda (env )?(install|create)|poetry install|npm (ci|install)|apt-get install|uv (sync|pip)",
+        "docker_run": r"(?im)^\s*(CMD|ENTRYPOINT)\b",
+        "seed": r"random_state\s*=|np\.random\.seed\(|random\.seed\(|torch\.manual_seed\(|tf\.random\.set_seed\(|"
+                r"set_seed\(|seed_everything\(|default_rng\(\s*\d",
+        "tracking": r"import mlflow|from mlflow|import wandb|wandb\.init|from clearml|import neptune|dvclive",
+    },
+}
+
 THRESHOLD_TESTS_JSON = RESULTS_DIR / "threshold_sensitivity.json"
 
 THRESHOLD_TESTS = {
@@ -297,9 +323,36 @@ THRESHOLD_TESTS = {
     "recurring_at_least": [1, 2, 3],
 }
 
+COHORT_SCHEDULE = {
+    "name": "SLIIT DS final-year project",
+    "status": "sample",
+    "source": "Student's summary of the SLIIT schedule (2026-10-22): months after the project start (repo creation)",
+    "milestones": [
+        {"name": "TAF submission", "months": 1, "work": "Collect datasets and research papers",
+         "stages": ["data_cleaning"]},
+        {"name": "Project charter submission", "months": 2, "work": "Planning", "stages": []},
+        {"name": "Proposal report submission", "months": 3, "work": "Full structure of the plan and the prototype",
+         "stages": ["data_cleaning", "eda", "documentation"]},
+        {"name": "Progress presentation 1", "months": 4, "work": "Train the model and develop",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development"]},
+        {"name": "Progress presentation 2", "months": 5, "work": "A fully working product",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development",
+                    "model_evaluation", "deployment_mlops"]},
+        {"name": "Final document submission", "months": 7, "work": "Final document",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development",
+                    "model_evaluation", "deployment_mlops"]},
+        {"name": "Final viva", "months": 8, "work": "Final viva",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development",
+                    "model_evaluation", "deployment_mlops"]},
+    ],
+}
+
 TIMELINE = {
     "min_items_per_stage": 3,
     "run_stages": ["model_development", "model_evaluation"],
+    "pace_order": ["data_cleaning", "eda", "feature_engineering", "model_development", "model_evaluation", "deployment_mlops"],
+    "deadline_label": "Final deadline",
+    "history_days": 3650,
 }
 
 HISTORY = {
@@ -318,7 +371,8 @@ READINESS = {
             "stage": "deployment_mlops",
             "criteria": {
                 "experiment_tracking": {"text": "experiments tracked (MLflow, W&B or similar)", "points": 1, "patterns": [
-                    r"(^|/)mlruns/", r"(^|/)mlproject$", r"mlflow", r"(^|/)wandb/", r"(^|/)\.neptune/"]},
+                    r"(^|/)mlruns/", r"(^|/)mlproject$", r"mlflow", r"(^|/)wandb/", r"(^|/)\.neptune/"],
+                    "or_evidence": "tracking_in_code"},
                 "saved_models": {"text": "trained models saved", "points": 1, "patterns": [
                     r"(^|/)models?/[^/]+\.(pkl|joblib|onnx|h5|pt|pth|keras|safetensors)$"]},
                 "model_metadata": {"text": "model versions described (registry or metadata)", "points": 1, "patterns": [
@@ -343,21 +397,25 @@ READINESS = {
             "stage": "deployment_mlops",
             "criteria": {
                 "tests": {"text": "automated tests", "points": 1, "patterns": [
-                    r"(^|/)tests?/", r"(^|/)test_[^/]*\.py$", r"_test\.py$", r"(^|/)conftest\.py$", r"(^|/)pytest\.ini$"]},
-                "ci": {"text": "continuous integration", "points": 1, "patterns": [
+                    r"(^|/)tests?/", r"(^|/)test_[^/]*\.py$", r"_test\.py$", r"(^|/)conftest\.py$", r"(^|/)pytest\.ini$"],
+                    "content": {"evidence": "test_count", "at_least": 3, "detail": "{value} tests"}},
+                "ci": {"text": "continuous integration that runs the tests", "points": 1, "patterns": [
                     r"(^|/)\.github/workflows/[^/]+\.ya?ml$", r"(^|/)\.gitlab-ci\.yml$", r"(^|/)jenkinsfile$",
-                    r"(^|/)azure-pipelines\.ya?ml$", r"(^|/)\.circleci/"]},
+                    r"(^|/)azure-pipelines\.ya?ml$", r"(^|/)\.circleci/"],
+                    "content": {"evidence": "ci_runs_tests", "is": True}},
                 "scripted_pipeline": {"text": "scripted pipeline", "points": 1, "patterns": [
                     r"(^|/)dvc\.yaml$", r"(^|/)makefile$", r"(^|/)pipelines?/", r"(^|/)pipeline[^/]*\.py$", r"(^|/)dags/"]},
-                "container": {"text": "container setup", "points": 1, "patterns": [
-                    r"(^|/)dockerfile", r"(^|/)(docker-)?compose\.ya?ml$", r"(^|/)\.devcontainer/"]},
+                "container": {"text": "container setup that installs and runs the project", "points": 1, "patterns": [
+                    r"(^|/)dockerfile", r"(^|/)(docker-)?compose\.ya?ml$", r"(^|/)\.devcontainer/"],
+                    "content": {"evidence": "docker_ok", "is": True}},
             },
         },
         "documentation": {
             "label": "Documentation",
             "stage": "documentation",
             "criteria": {
-                "readme": {"text": "README", "points": 1, "patterns": [r"(^|/)readme(\.[a-z]+)?$"]},
+                "readme": {"text": "README explaining setup and usage", "points": 1, "patterns": [r"(^|/)readme(\.[a-z]+)?$"],
+                           "content": {"evidence": "readme_ok", "is": True}},
                 "docs": {"text": "docs folder", "points": 1, "patterns": [r"(^|/)docs?/", r"(^|/)mkdocs\.ya?ml$"]},
                 "model_card": {"text": "model or data card", "points": 1, "patterns": [
                     r"model[_-]?card", r"data[_-]?card", r"datasheet"]},
@@ -368,15 +426,18 @@ READINESS = {
 
 PROJECT_HEALTH = {
     "reproducibility": {
-        "environment": {"text": "environment or lock file", "points": 1, "patterns": [
+        "environment": {"text": "package versions pinned", "points": 1, "patterns": [
             r"(^|/)requirements[^/]*\.txt$", r"(^|/)environment\.ya?ml$", r"(^|/)pyproject\.toml$",
-            r"(^|/)pipfile(\.lock)?$", r"(^|/)poetry\.lock$", r"(^|/)setup\.py$", r"(^|/)conda-lock", r"(^|/)renv\.lock$"]},
+            r"(^|/)pipfile(\.lock)?$", r"(^|/)poetry\.lock$", r"(^|/)setup\.py$", r"(^|/)conda-lock", r"(^|/)renv\.lock$"],
+            "content": {"evidence": "pinned_share", "at_least": 0.8, "detail": "{value:.0%} pinned"}},
         "parameters": {"text": "parameters in config files", "points": 1, "patterns": [
             r"(^|/)params\.ya?ml$", r"(^|/)(conf|configs?)/[^/]+\.(ya?ml|json|toml)$", r"(^|/)config\.(ya?ml|json|toml)$"]},
         "data": {"text": "data versioned or a download script", "points": 1, "patterns": [
             r"\.dvc$", r"(^|/)dvc\.lock$", r"(^|/)\.dvc/", r"(download|fetch|get|make)_?(data|dataset)"]},
         "scripts": {"text": "runnable scripts, not only notebooks", "points": 1, "patterns": [
             r"(^|/)(src|scripts)/[^/]+\.py$", r"(^|/)(train|run|main|predict|evaluate)[^/]*\.py$"]},
+        "seeds": {"text": "random seeds set in the code", "points": 1, "patterns": [],
+                  "content": {"evidence": "seeds_set", "is": True}},
     },
     "data_quality": {
         "cause": "data_leakage",

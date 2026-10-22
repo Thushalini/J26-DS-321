@@ -3,7 +3,7 @@
 import { HelperSuggestions } from "@/components/predict/helper-suggestions"
 import { MilestoneResults } from "@/components/predict/milestone-results"
 import {
-  FactorsCard, ForecastCard, NotEnoughData, PredictionState, ProbabilityCard, ReadinessCard, SignalsNote,
+  FactorsCard, ForecastCard, NotEnoughData, PredictionState, ProbabilityCard, ReadinessCard, SignalsNote, TimelineCard,
 } from "@/components/predict/prediction-sections"
 import { Recommendations } from "@/components/predict/recommendations"
 import { SectionCard } from "@/components/section-card"
@@ -41,6 +41,8 @@ export default function PredictPage() {
           <ForecastCard prediction={prediction} />
         </>
       )}
+
+      {prediction && <TimelineCard prediction={prediction} />}
 
       {prediction && <ReadinessCard prediction={prediction} />}
 

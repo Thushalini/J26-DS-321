@@ -55,3 +55,15 @@ def test_readiness_still_scores_four_areas_without_the_moved_items():
     result = assess(REPO)
     assert {a["id"] for a in result["areas"]} == {"versioning", "monitoring", "pipeline", "documentation"}
     assert all(a["score"] > 0 for a in result["areas"])
+
+
+@pytest.mark.parametrize("metric, objective, expected", [
+    ("F1", "Reach 85% accuracy on the test set", 0.85),
+    ("F1", "Predict churn with an F1 above 0.8", 0.8),
+    (None, "Accuracy of at least 90%", 0.9),
+    ("F1", "Identify the top 10% riskiest customers", 0.80),
+    ("F1 >= 0.7", "Reach 85% accuracy", 0.7),
+    ("RMSE", "Reach 85% accuracy", None),
+])
+def test_the_goal_can_give_the_target_when_the_metric_has_no_number(metric, objective, expected):
+    assert project_health.target(metric, objective) == expected

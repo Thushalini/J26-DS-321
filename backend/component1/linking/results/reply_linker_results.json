@@ -1,0 +1,49 @@
+{
+  "data": {
+    "kind": "SIMULATED planning chats (simulate.py). Not real chat.",
+    "chats_train": 480,
+    "chats_test": 120,
+    "pairs_train": 38495,
+    "replies_test": 2339,
+    "share_of_test_replies_to_older_proposals": 0.262,
+    "assumptions": {
+      "reply_to_latest": 0.65,
+      "names_value": 0.3,
+      "names_field": 0.2,
+      "small_talk_rate": 0.15,
+      "seconds_between": [
+        5,
+        240
+      ]
+    }
+  },
+  "baseline_latest_proposal": {
+    "top1_accuracy": 0.738,
+    "top1_on_replies_to_older_proposals": 0.0,
+    "replies": 2339
+  },
+  "logistic_regression": {
+    "top1_accuracy": 0.891,
+    "top1_on_replies_to_older_proposals": 0.586,
+    "replies": 2339
+  },
+  "random_forest": {
+    "top1_accuracy": 0.888,
+    "top1_on_replies_to_older_proposals": 0.573,
+    "replies": 2339
+  },
+  "random_forest_feature_importance": {
+    "is_latest_proposal": 0.245,
+    "proposal_rank": 0.243,
+    "names_the_value": 0.092,
+    "same_speaker": 0.079,
+    "names_another_field": 0.066,
+    "word_overlap": 0.065,
+    "names_another_value": 0.065,
+    "log_minutes_between": 0.063,
+    "log_messages_between": 0.04,
+    "names_the_field": 0.037,
+    "already_answered_by_replier": 0.005
+  },
+  "saved_model": "logistic_regression"
+}

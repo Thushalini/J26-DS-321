@@ -1,12 +1,14 @@
 """A chat transcript: five SAMPLE messages and Buddy's replies.
 
 Run from the backend folder:
-    python -m component1.demo_chat --fake        (pretend model, no key needed)
-    python -m component1.demo_chat               (real Gemini, sample messages only)
-    python -m component1.demo_chat --delay 30    (wait between Gemini calls)
+    python -m component1.demo_chat --fake         (pretend model, nothing sent anywhere)
+    python -m component1.demo_chat                (as the app is set up: rules, then Groq/Gemini)
+    python -m component1.demo_chat --mode rules   (rules only: no key, nothing sent)
+    python -m component1.demo_chat --mode llm     (the language model for every message)
+    python -m component1.demo_chat --delay 30     (wait between messages, for rate limits)
 
 Train the state model first:  python -m component1.state.train
-SAMPLE MESSAGES ONLY. On Gemini's free tier Google may keep what you send.
+SAMPLE MESSAGES ONLY. On a free tier the provider (Groq or Google) may keep what you send.
 
 Time is simulated: each message arrives 20 seconds after the last, then the chat goes
 quiet so you can see Buddy ask about a missing field.
@@ -16,15 +18,12 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from pathlib import Path
 
 from .agent.chat_agent import ChatAgent
 from .demo_pipeline import scripted_llm
-from .extraction.demo_extract import SAMPLE_MESSAGES
-from .extraction.gemini_provider import GeminiConfigError, load_env_file, make_gemini_llm
+from .extraction.demo_extract import SAMPLE_MESSAGES, add_extractor_options, setup_extractor
 from .state.predict import MODEL_PATH, load_model
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
 SECONDS_BETWEEN_MESSAGES = 20
 QUIET_TICKS = (110, 250, 400)   # seconds after the last message
 
@@ -39,8 +38,8 @@ def show_buddy(replies: list[str]) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--fake", action="store_true", help="use a pretend model instead of Gemini")
-    ap.add_argument("--delay", type=float, default=0.0, help="seconds to wait between Gemini calls")
+    ap.add_argument("--fake", action="store_true", help="use a pretend model (scripted answers), send nothing")
+    add_extractor_options(ap)
     args = ap.parse_args(argv)
 
     if not MODEL_PATH.exists():
@@ -52,18 +51,12 @@ def main(argv=None) -> int:
         llm = scripted_llm
         print("PRETEND MODEL (scripted answers). Nothing is sent anywhere.\n")
     else:
-        load_env_file(BACKEND_DIR / ".env")
-        try:
-            llm = make_gemini_llm()
-        except GeminiConfigError as exc:
-            print(f"Cannot start: {exc}")
-            return 1
-        print("SAMPLE MESSAGES ONLY. Nothing real is being sent.\n")
+        llm = setup_extractor(args.mode)
 
     agent = ChatAgent("demo", bundle, llm)
     now = 0.0
     for i, (message_id, speaker, text) in enumerate(SAMPLE_MESSAGES):
-        if i and args.delay and not args.fake:
+        if i and args.delay and getattr(llm, "mode", "rules") != "rules":
             time.sleep(args.delay)
         now = i * SECONDS_BETWEEN_MESSAGES
         print(f"{speaker}: {text}")

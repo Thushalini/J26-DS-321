@@ -15,7 +15,7 @@ def status(probability: float, features: dict, rules: dict | None = None) -> str
 
 
 def team_outlook(conn, team_id: str, bundle: dict) -> dict:
-    project = team_project(conn, team_id)
+    project = team_project(conn, team_id, allow_network=False)
     signals = len(FEATURES) - len(project["missing"])
     if signals < config.API["min_team_signals"]:
         return {"team_id": team_id, "enough_data": False, "status": None, "probability": None}

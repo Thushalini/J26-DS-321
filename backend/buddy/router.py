@@ -38,6 +38,16 @@ from component2.api.contract import clean_blueprint, clean_plan
 from component2.classify.keyword_baseline import classify
 from component2.config import BLUEPRINT_DIR
 from component2.db import save_activities, save_labels
+try:
+    from component1.hook import merge_chat, run_in_background
+except Exception as e:                      # Component 1 must never stop the app from starting
+    print(f"[component1] not loaded: {e}")
+
+    def run_in_background(*args, **kwargs):
+        pass
+
+    def merge_chat(conn, team_id, messages, limit=200):
+        return messages
 
 from buddy import codes, sync
 from buddy.access import (PANEL_ROLE, anonymous_team_name, is_anonymised, membership, require, require_live,
@@ -607,11 +617,12 @@ def get_chat(team_id: str, limit: int = Query(200, ge=1, le=1000),
     msgs = [{"msg_id": r["msg_id"], "sender": r["name"], "member_code": r["member_code"], "ts": r["ts"],
              "text": r["text"], "reply_to": r["reply_to"], "mine": r["user_id"] == user["user_id"],
              "team_role": r["team_role"]} for r in rows]
-    return {"read_only": False, "simulated": False, "messages": msgs[::-1]}
+    msgs = merge_chat(conn, team_id, msgs[::-1], limit)       # oldest first, with Buddy's messages added
+    return {"read_only": False, "simulated": False, "messages": msgs}
 
 
 @router.post("/teams/{team_id}/chat")
-def post_chat(team_id: str, body: ChatIn, user=Depends(current_user), conn=Depends(get_conn)):
+def post_chat(team_id: str, body: ChatIn, background: BackgroundTasks, user=Depends(current_user), conn=Depends(get_conn)):
     t, my_role = team_access(conn, user, team_id)
     require_live(t, "post in its chat")
     require(my_role, ("lead", "member"), "post in the chat")
@@ -635,6 +646,8 @@ def post_chat(team_id: str, body: ChatIn, user=Depends(current_user), conn=Depen
                                          "in_app": True}}])
         stage, conf = classify(text)
         save_labels(conn, "baseline", [(aid, stage, conf)])      # trained model re-labels it at the next sync
+        run_in_background(background, team_id, msg_id, m["member_code"], user["user_id"], ts, text,
+                          reply_to=reply_to)   # Component 1 (Buddy); reply_to helps it link "agreed" to a proposal
     return {"msg_id": msg_id, "ts": ts}
 
 
