@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from buddy.router import router as app_router
+from buddy.profile import router as profile_router
 from component2.api.router import router as c2_router
 from component4.api.router import router as c4_router
 
@@ -37,6 +38,7 @@ app.add_middleware(
 
 app.include_router(c2_router)
 app.include_router(app_router)      # sign-in, teams, chat, blueprint, feedback (Buddy.ds app)
+app.include_router(profile_router)  # my profile (private to the signed-in person)
 app.include_router(c4_router)       # success prediction, explanation, forecast, recommendations
 
 try:
