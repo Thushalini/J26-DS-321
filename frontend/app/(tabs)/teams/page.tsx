@@ -123,6 +123,7 @@ export default function TeamsPage() {
 
   const mine = teams.filter((t) => !t.is_research && t.my_role !== "panel" && !t.archived)
   const research = teams.filter((t) => t.is_research)
+  const supervisedList = supervisorLayout.researchInGroupList && isSupervisorLayout(user?.role) ? [...mine, ...research] : mine
   const me = detail?.members.find((m) => m.is_me)
   const canEditRepo = detail && !detail.is_research && (detail.my_role === "lead" || detail.my_role === "supervisor")
 
@@ -141,7 +142,7 @@ export default function TeamsPage() {
       )}
 
       {supervisor && (
-        <SupervisedGroups teams={mine} openId={team?.team_id} onChanged={refreshTeams} onError={setError}
+        <SupervisedGroups teams={supervisedList} openId={team?.team_id} onChanged={refreshTeams} onError={setError}
                           onOpen={(id) => {
                             selectTeam(id)
                             if (isSupervisorLayout(user?.role)) router.push(supervisorLayout.openGroupAt)

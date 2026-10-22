@@ -42,7 +42,7 @@ export function AppHeader() {
             <p className="truncate text-sm font-semibold">{team?.name ?? supervisorHeaderCopy.noGroup}</p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {teams.some((t) => t.is_research) && (
+            {!supervisorLayout.researchInGroupList && teams.some((t) => t.is_research) && (
               <select
                 aria-label={supervisorHeaderCopy.researchLabel}
                 className="max-w-36 truncate rounded-lg border border-border bg-surface px-2 py-1 text-xs"
