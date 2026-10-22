@@ -71,6 +71,8 @@ def found_text(signal: Signal) -> str:
 
 
 def gap_text(signal: Signal) -> str:
+    if signal.field == "dataset_size":
+        return "I noticed nobody has said how big the dataset is. Roughly how many rows does it have?"
     if signal.field == "timeline":
         return ("I noticed there is no decision yet on the timeline. When is the deadline, "
                 "or how many weeks does the team have?")

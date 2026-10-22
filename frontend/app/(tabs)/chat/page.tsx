@@ -5,6 +5,7 @@ import type React from "react"
 // Buddy (Component 1) messages arrive in the same list with sender_type "assistant".
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { BuddyMessage } from "@/components/buddy-message"
 import { Button, Notice, Pill, inputClass } from "@/components/ui"
 import { api, shortDate, type Team } from "@/lib/api"
 import { useSession } from "@/lib/session"
@@ -133,7 +134,7 @@ export default function ChatPage() {
                   {m.team_role === "supervisor" && " · supervisor"} · {shortDate(m.ts)}
                 </p>
                 {parent && <p className="mt-1 border-l-2 border-border pl-2 text-xs text-muted">↪ {parent.text.slice(0, 80)}</p>}
-                <p className="mt-1 whitespace-pre-wrap text-sm">{m.text}</p>
+                {isBuddy ? <BuddyMessage text={m.text} /> : <p className="mt-1 whitespace-pre-wrap text-sm">{m.text}</p>}
                 {!chat.read_only && !isBuddy && (
                   <button type="button" className="mt-1 text-xs text-primary" onClick={() => setReplyTo(m)}>Reply</button>
                 )}

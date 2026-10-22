@@ -194,7 +194,7 @@ def test_the_plan_shows_the_worked_out_deadline_and_the_milestones():
     assert timeline["value"] == "8 weeks" and timeline["timeline"]["duration_days"] == 56
     assert timeline["timeline"]["deadline"] is not None
     assert [(m["name"], m["date"]) for m in plan["milestones"]] == [("Demo", "2026-11-20")]
-    assert plan["readiness"]["total"] == 10
+    assert plan["readiness"]["total"] == 11
 
 
 def test_buddy_asks_about_the_timeline_in_plain_words():
@@ -211,11 +211,11 @@ def test_documents_suggest_the_overall_timeline_but_not_milestones():
 
 
 # ------------------------------------------- Component 4 still reads the plan
-def test_component_4s_adapter_still_reads_a_ten_field_blueprint():
+def test_component_4s_adapter_still_reads_the_bigger_blueprint():
     pytest.importorskip("component4")
     from component4.m1_feature_integration.c1_adapter import project_features
 
     store = EventStore("t")
     process_message(store, BUNDLE, RULES, "m1", "M-1", "We have 8 weeks for this project.")
     out = project_features(store.state.model_dump(mode="json"))
-    assert out["context"]["fields_total"] == 10
+    assert out["context"]["fields_total"] == 11

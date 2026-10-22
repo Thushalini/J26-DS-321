@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 MONTHS = {
@@ -152,7 +152,8 @@ def resolve(value: Optional[str], said_on=None, today: Optional[date] = None) ->
     """
     if not value:
         return None
-    ref, today = _as_date(said_on), today or date.today()
+    # "Today" in UTC, the same clock the event times use; local time could be a day apart near midnight.
+    ref, today = _as_date(said_on), today or datetime.now(timezone.utc).date()
     text = value.strip()
     out = {"kind": "text", "text": text, "deadline": None, "duration_days": None, "days_left": None, "week": None}
     if text.lower().startswith(MILESTONE_PREFIX):

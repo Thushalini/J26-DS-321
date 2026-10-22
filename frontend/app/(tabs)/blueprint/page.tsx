@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react"
 
 import { BlueprintPlan } from "@/components/blueprint-plan"
-import { Card, Field, Notice, Pill } from "@/components/ui"
+import { Card, Notice, Pill } from "@/components/ui"
 import { api, shortDate } from "@/lib/api"
 import { useSession } from "@/lib/session"
 
@@ -60,33 +60,29 @@ export default function BlueprintPage() {
     <div className="flex flex-col gap-4">
       {!team.is_research && <BlueprintPlan teamId={team.team_id} />}
 
-      <Card
-        title="Drift-check plan (target / algorithm / metric)"
-        note="The three-value plan Component 2 checks the team's work against. Buddy fills it in from the chat once a value is known or confirmed. It cannot be edited by hand."
-      >
+      <Card title="Drift-check plan">
+        {error && <Notice tone="error">{error}</Notice>}
+        {!bp && !error && <p className="text-sm text-muted">Loading...</p>}
         {bp && (
-          <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
-            <Pill tone={bp.source === "inferred" ? "research" : "neutral"}>{SOURCE_TEXT[bp.source]}</Pill>
-            {bp.updated_at && <span>Last changed {shortDate(bp.updated_at)}{bp.updated_by ? ` by ${bp.updated_by}` : ""}</span>}
-          </p>
+          <div className="flex flex-col gap-3">
+            <dl className="divide-y divide-border rounded-bar border border-border">
+              {FIELDS.map((f) => (
+                <div key={f.key} className="flex items-baseline justify-between gap-3 px-3 py-2">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-muted">{f.label}</dt>
+                  <dd className={`text-right text-sm ${bp[f.key] ? "font-semibold" : "text-subtle"}`}>
+                    {bp[f.key] ?? "Not set yet"}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {bp.notes && <p className="text-sm text-muted">{bp.notes}</p>}
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              <Pill tone={bp.source === "inferred" ? "research" : "neutral"}>{SOURCE_TEXT[bp.source]}</Pill>
+              {bp.updated_at && <span>Last changed {shortDate(bp.updated_at)}{bp.updated_by ? ` by ${bp.updated_by}` : ""}</span>}
+            </p>
+          </div>
         )}
       </Card>
-
-      {error && <Notice tone="error">{error}</Notice>}
-      {!bp && !error && <p className="text-sm text-muted">Loading...</p>}
-
-      {bp && (
-        <Card>
-          <div className="flex flex-col gap-3">
-            {FIELDS.map((f) => (
-              <Field key={f.key} label={f.label}>
-                <span className="text-sm">{bp[f.key] ?? <span className="text-muted">Not set yet</span>}</span>
-              </Field>
-            ))}
-            {bp.notes && <p className="text-sm text-muted">{bp.notes}</p>}
-          </div>
-        </Card>
-      )}
     </div>
   )
 }

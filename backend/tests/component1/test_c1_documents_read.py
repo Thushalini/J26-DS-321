@@ -192,3 +192,23 @@ def test_generic_talk_about_data_is_not_a_dataset(text):
 def test_cohens_kappa_is_a_metric():
     facts = extract_document([Chunk(1, 1, "Agreement is measured with Cohen's Kappa.")], fallback_llm=None)
     assert [(f.field, f.value) for f in facts] == [("evaluation_metric", "Cohen's Kappa")]
+
+
+@pytest.mark.parametrize("text", [
+    "Project Brief: Sri Lanka Tourism Forecasting\n\nThis project is in the tourism domain.",
+    "Sri Lanka Tourism Forecasting\nThis project is in the tourism domain.",
+])
+def test_a_heading_does_not_run_into_the_next_sentence(text):
+    facts = extract_document(chunk_pages([Page(1, text)]))
+    assert {(f.field, f.value) for f in facts if f.field == "target_variable"} == set()
+    assert ("domain", "tourism") in {(f.field, f.value) for f in facts}
+
+
+def test_lines_of_one_wrapped_sentence_stay_one_sentence():
+    text = "We will train a model on the data that\nthe tourism board publishes every month."
+    assert chunk_pages([Page(1, text)])[0].text == text.replace("\n", " ")
+
+
+def test_a_page_number_line_is_still_dropped():
+    assert [c.text for c in chunk_pages([Page(1, "Page 4 of 9\n\nWe will evaluate the model using RMSE.")])] == \
+        ["We will evaluate the model using RMSE."]

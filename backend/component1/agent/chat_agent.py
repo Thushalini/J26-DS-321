@@ -22,13 +22,19 @@ Accept button. Accepted suggestions collect in `accepted` until the caller has s
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from ..common.events import EventStore
+from ..decisions.domino import settle
+from ..decisions.signals import decision_signals
+from ..decisions.tracker import find_active, on_reply, on_statement
 from ..documents.candidates import Candidate
 from ..documents.integrate import accept_candidate, document_speaker
 from ..extraction.extractor import LLMFn
-from ..pipeline import _SAVED_DETAIL, MessageResult, process_message, state_signals
+from ..linking.features import Message
+from ..linking.predict import default_bundle as link_default_bundle, link_reply
+from ..pipeline import _SAVED_DETAIL, MessageResult, judge_after_domino, judge_field, process_message, state_signals
 from ..state.features import EXTRACTOR_ACTOR
 from .policy import Buddy
 from .signals import FOUND, SAVED, Signal
@@ -36,8 +42,15 @@ from .signals import FOUND, SAVED, Signal
 log = logging.getLogger("component1")
 
 ENDORSING_INTENTS = ("agreement", "finalization")
+HISTORY = 40                     # recent messages kept for reply linking
+_DEFAULT_LINKER = object()
 MIN_INTENT_CONFIDENCE = 0.5      # below this the intent label is ignored
 TOPIC_LIFETIME = 6               # messages after which a proposed value is no longer "the topic"
+# A short yes to Buddy's own question ("Should we use that?"). Only used for that question.
+_YES_TO_BUDDY = re.compile(
+    r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|sounds good|go ahead|please do|use (?:that|it)|let'?s use (?:that|it))"
+    r"\b[\s,.!]*(?:(?:please\s*)?(?:use|take|add) (?:that|it)[\s.!]*|please[\s.!]*|thanks?[\s.!]*)?$",
+    re.IGNORECASE)
 
 
 class ChatAgent:
@@ -49,6 +62,7 @@ class ChatAgent:
         store: Optional[EventStore] = None,
         buddy: Optional[Buddy] = None,
         intent_bundle: Optional[dict] = None,
+        link_bundle=_DEFAULT_LINKER,
     ):
         self.project_id = project_id
         self.bundle = bundle
@@ -63,6 +77,10 @@ class ChatAgent:
         self.candidates: dict[str, Candidate] = {}              # field -> best open document suggestion
         self.accepted: list[tuple[Candidate, str]] = []         # (suggestion, accepted by), not saved yet
         self._found_topic: Optional[Candidate] = None           # the suggestion Buddy last asked about
+        # Reply linking: recent messages (proposals carry field/value) and who answered which proposal.
+        self.link_bundle = link_default_bundle() if link_bundle is _DEFAULT_LINKER else link_bundle
+        self._history: list[Message] = []
+        self._answered: dict[str, set] = {}
         self._restore_topic()
 
     # ----------------------------------------------------------- restart
@@ -93,13 +111,50 @@ class ChatAgent:
             log.warning("Component 1 could not classify the intent of a message", exc_info=True)
             return None
 
-    def _endorsement(self, speaker: str, text: str) -> Optional[tuple[str, str]]:
+    def _parent(self, message_id: str, speaker: str, text: str, now: float,
+                reply_to: Optional[str]) -> Optional[tuple]:
+        """The proposal this message may answer: (field, value, proposer, proposal message id or None).
+
+        In order: Buddy's own question about a document suggestion (it was the last thing asked), the
+        app's Reply button, the trained reply linker over recent proposals, the latest topic."""
+        topic = self._topic if self._since_topic <= TOPIC_LIFETIME else None
+        if topic is not None and str(topic[2]).startswith("doc:"):
+            return (*topic, None)
+        if reply_to:
+            replied = [m for m in self._history if m.message_id == reply_to and m.field]
+            if replied:
+                m = replied[-1]
+                return m.field, m.value, m.speaker, m.message_id
+        try:
+            m = link_reply(self.link_bundle, Message(message_id, speaker, now, text), self._history, self._answered)
+        except Exception:
+            log.warning("Component 1 reply linking failed; using the latest topic", exc_info=True)
+            m = None
+        if m is not None:
+            return m.field, m.value, m.speaker, m.message_id
+        return (*topic, None) if topic is not None else None
+
+    def _remember(self, message_id: str, speaker: str, text: str, now: float, stated, parent) -> None:
+        if stated:
+            for field, value in stated:
+                self._history.append(Message(message_id, speaker, now, text, field, value))
+        else:
+            self._history.append(Message(message_id, speaker, now, text))
+        self._history = self._history[-HISTORY:]
+
+    def _endorsement(self, speaker: str, text: str, parent: Optional[tuple] = None) -> Optional[tuple[str, str]]:
         """(field, value) this message backs up, or None."""
-        if self._topic is None or self._since_topic > TOPIC_LIFETIME:
-            return None
-        field, value, proposer = self._topic
+        if parent is None:
+            if self._topic is None or self._since_topic > TOPIC_LIFETIME:
+                return None
+            parent = (*self._topic, None)
+        field, value, proposer = parent[:3]
         if speaker == proposer:                      # agreeing with yourself is not confirmation
             return None
+        # Buddy just asked a yes/no question about a document suggestion: a short "yes" answers it,
+        # even when the intent model is unsure about so few words.
+        if str(proposer).startswith("doc:") and _YES_TO_BUDDY.match(text or ""):
+            return field, value
         found = self._intent(text)
         if found is None:
             return None
@@ -141,13 +196,16 @@ class ChatAgent:
                 self._since_topic = 0
 
     # ------------------------------------------------------------- calls
-    def on_message(self, message_id: str, speaker: str, text: str, now: float) -> list[str]:
-        """Call for every message written by a PERSON. Never call it for Buddy's own messages."""
+    def on_message(self, message_id: str, speaker: str, text: str, now: float,
+                   reply_to: Optional[str] = None) -> list[str]:
+        """Call for every message written by a PERSON. Never call it for Buddy's own messages.
+        reply_to: the message the person answered with the app's Reply button, if any."""
         self._heard_any_message = True
         self.buddy.heard_message(now)
         self._since_topic += 1
 
-        endorse = self._endorsement(speaker, text)
+        parent = self._parent(message_id, speaker, text, now, reply_to)
+        endorse = self._endorsement(speaker, text, parent)
         found = self._open_found_topic(endorse)
         result = process_message(self.store, self.bundle, self.llm, message_id, speaker, text,
                                  endorse=None if found else endorse, candidates=self.candidates)
@@ -161,14 +219,71 @@ class ChatAgent:
 
         # A message that stated a new value becomes the topic the next "ok" refers to.
         stated = [s for s in result.saved if endorse is None or s != endorse]
+
+        # Decision records and Domino validation (decisions/).
+        decision_changes = [] if found is not None else self._track_decisions(
+            message_id, speaker, text, stated, parent)
+        domino = settle(self.store, decision_changes)
+        judge_after_domino(self.store, self.bundle, domino)
+        decision_changes += domino
+        self._remember(message_id, speaker, text, now, stated, parent)
+
         if stated:
             field, value = stated[-1]
             self._topic = (field, value, speaker)
             self._since_topic = 0
         self._prev_text = text
-        replies = self.buddy.step(result.signals, now)
+        # A message that restates a value AND finalizes it gets one line: the decision's ("finalized ...").
+        decided = decision_signals(self.store, decision_changes)
+        decided_fields = {s.field for s in decided if s.kind == SAVED}
+        signals = [self._final_status(s) for s in result.signals if s.kind == SAVED and s.field not in decided_fields] \
+            + decided + state_signals(self.store, self.candidates)
+        replies = self.buddy.step(signals, now)
         self._after_step()
         return replies
+
+    # ---------------------------------------------------------- decisions
+    def _final_status(self, s: Signal) -> Signal:
+        """A "Noted: ..." line says the field's status AFTER the decisions were updated, so it never says
+        "conflicts" in the same message that settled the disagreement."""
+        from dataclasses import replace
+
+        from ..common.schema import FieldName
+        if s.kind != SAVED or s.detail not in _SAVED_DETAIL.values():
+            return s                                        # e.g. a finalized/rejected note: keep as it is
+        status = self.store.state.fields[FieldName(s.field)].status.value
+        return replace(s, detail=_SAVED_DETAIL.get(status, s.detail))
+
+    def _decision_intent(self, text: str) -> Optional[str]:
+        """The message's decision intent: the trained model when it is confident, otherwise the
+        labeling guide's keyword rules ("sounds good", "agreed", "no"), which are precise on clear cues."""
+        from ..intent.keywords import keyword_intent
+
+        found = self._intent(text)
+        if found is not None and found[1] >= MIN_INTENT_CONFIDENCE:
+            return found[0]
+        cue = keyword_intent(text, self._prev_text)
+        return cue if cue != "other" else (found[0] if found else None)
+
+    def _track_decisions(self, message_id: str, speaker: str, text: str, stated, topic) -> list:
+        intent = self._decision_intent(text)
+        changes = []
+        for field, value in stated:                          # the message names values itself
+            changes += on_statement(self.store, field, value, speaker, message_id, text, intent)
+        if not stated and topic is not None and intent in ("agreement", "finalization", "rejection"):
+            field, value, proposer = topic[:3]               # "agreed" / "lock it in" / "no" about its parent
+            if len(topic) > 3 and topic[3]:
+                self._answered.setdefault(topic[3], set()).add(speaker)
+            d = find_active(self.store.state, field, value)
+            # The proposer may finalize once someone else agreed (tracker.endorse checks that).
+            if d is not None and (speaker != proposer or intent == "finalization"):
+                changes += on_reply(self.store, d, speaker, intent)
+        # A settled (or rejected) decision changes how settled the field is: judge the touched fields again.
+        settled = {c.field for c in changes
+                   if c.kind in ("confirmed", "finalized", "reconfirmed", "superseded", "rejected")}
+        for field in settled:
+            judge_field(self.store, self.bundle, field)
+        return changes
 
     def tick(self, now: float) -> list[str]:
         """Call regularly (for example every 30 seconds). Lets Buddy ask a question after

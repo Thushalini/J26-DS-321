@@ -222,6 +222,46 @@ export interface PlanTimeline {
   week: number | null
 }
 
+/** One plan check: do two parts of the plan fit together? */
+export interface PlanCheck {
+  key: string
+  label: string                      // e.g. "Metric fits the task"
+  field: string                      // the field a team would change to fix it
+  status: "pass" | "warning" | "fail" | string
+  detail: string                     // why, in a sentence (empty for a pass)
+  alternatives: string[]
+}
+
+/** The trained feasibility model's verdict on the plan (trained on simulated project outcomes). */
+export interface PlanFeasibilityModel {
+  label: "feasible" | "risky" | "infeasible" | string
+  probability: number
+  probabilities: Record<string, number>
+  inputs: { task: string; algorithm: string; family: string; rows: number; has_gpu: boolean; weeks_left: number | null }
+  reasons: { text: string; effect: "raises risk" | "lowers risk" | string; weight: number }[]
+  alternatives: { change: string; label: string; feasible_probability: number }[]
+  note: string
+}
+
+/** One planning decision: what, who proposed it, why, who agreed or objected, and its status. */
+export interface PlanDecision {
+  decision_id: string
+  field: string
+  label: string
+  value: string
+  status: "proposed" | "confirmed" | "finalized" | "rejected" | "superseded" | "pending_fix" | string
+  status_text: string
+  proposed_by: string
+  agreed_by: string[]
+  objected_by: string[]
+  rationale: string | null
+  supersedes: string | null
+  pending_reason: string | null       // why it needs a re-check (Domino validation)
+  created_at: string
+  updated_at: string
+  timeline?: { time: string; what: string; by?: string; from?: string; reason?: string | null }[]
+}
+
 export interface PlanMilestone {
   decision_id: string
   name: string
@@ -240,6 +280,10 @@ export interface PlanData {
   documents?: PlanDocument[] | null
   recent_changes?: PlanHistoryEntry[]
   milestones?: PlanMilestone[]
+  decisions?: { current: PlanDecision[]; all: PlanDecision[]; needs_recheck: PlanDecision[] }
+  checks?: PlanCheck[]
+  feasibility_model?: PlanFeasibilityModel | null
+  feasibility?: Record<string, string> | null
   team_id: string
   version: number
   updated_at: string | null

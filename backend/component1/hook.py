@@ -39,15 +39,16 @@ def service() -> AgentService:
         return _service
 
 
-def _run(team_id, msg_id, member_code, user_id, ts, text) -> None:
-    service().handle_chat_message(team_id, msg_id, member_code, text, ts, user_id=user_id)
+def _run(team_id, msg_id, member_code, user_id, ts, text, reply_to=None) -> None:
+    service().handle_chat_message(team_id, msg_id, member_code, text, ts, user_id=user_id, reply_to=reply_to)
 
 
 def run_in_background(background_tasks: Any, team_id: str, msg_id: str, member_code: Optional[str],
-                      user_id: Optional[str], ts: str, text: str) -> None:
-    """Hand a saved message to Component 1 WITHOUT making the sender wait. Never raises."""
+                      user_id: Optional[str], ts: str, text: str, reply_to: Optional[str] = None) -> None:
+    """Hand a saved message to Component 1 WITHOUT making the sender wait. Never raises.
+    reply_to: the message the person answered with the Reply button, if any (helps reply linking)."""
     try:
-        background_tasks.add_task(_run, team_id, msg_id, member_code, user_id, ts, text)
+        background_tasks.add_task(_run, team_id, msg_id, member_code, user_id, ts, text, reply_to)
     except Exception:
         log.exception("Component 1 could not be scheduled for message %s (the chat is not affected)", msg_id)
 

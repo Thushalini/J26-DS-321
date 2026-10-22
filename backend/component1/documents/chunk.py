@@ -16,6 +16,7 @@ from .parse import Page
 
 MAX_CHARS = 1200
 MIN_CHARS = 20        # shorter pieces (page numbers, stray headers) are dropped
+HEADING_CHARS = 60    # a first line this short with no full stop is read as a heading
 
 # A line that is only the heading of the reference list, optionally numbered ("10. References").
 REFERENCES_HEADING = re.compile(
@@ -39,9 +40,20 @@ def split_sentences(text: str) -> list[str]:
     return [s for s in _SENTENCE_END.split(text) if s.strip()]
 
 
+def _ended(text: str) -> str:
+    """A heading or list item with no full stop gets one, so it never runs into the next sentence
+    ("Tourism Forecasting" + "This project ..." would otherwise read as one sentence)."""
+    text = text.rstrip()
+    return text if not text or text[-1] in ".!?:;" else text + "."
+
+
 def _clean(text: str) -> str:
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)      # words broken across lines: "classi-\nfier"
-    return " ".join(text.split())
+    lines = text.split("\n")
+    # A short first line with no full stop, followed by a line starting with a capital, is a heading.
+    if len(lines) > 1 and len(lines[0].strip()) <= HEADING_CHARS and lines[1].strip()[:1].isupper():
+        lines[0] = _ended(lines[0])
+    return _ended(" ".join(" ".join(lines).split()))
 
 
 def _paragraphs(page_text: str) -> tuple[list[str], bool]:
@@ -97,7 +109,7 @@ def chunk_pages(pages: Iterable[Page], max_chars: int = MAX_CHARS) -> list[Chunk
         paragraphs, stop = _paragraphs(page.text)
         current = ""
         for paragraph in paragraphs:
-            if _NOISE.fullmatch(paragraph):
+            if _NOISE.fullmatch(paragraph.rstrip(".")):
                 continue
             for piece in _pieces(paragraph, max_chars):
                 if current and len(current) + 1 + len(piece) > max_chars:

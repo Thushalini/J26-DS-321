@@ -194,3 +194,19 @@ def test_rule_output_goes_into_the_blueprint_like_llm_output():
     apply_message(store, "M1", "Member_A", "Maybe RMSE for the metric?", make_hybrid_llm(None, mode="rules"))
     f = store.state.fields[FieldName.EVALUATION_METRIC]
     assert f.value == "RMSE" and f.status == FieldStatus.UNCERTAIN
+
+
+def test_a_dataset_named_before_the_word_dataset_is_read_once():
+    assert item("The dataset is the SLTDA monthly arrivals dataset.", FieldName.DATASET).value == \
+        "SLTDA monthly arrivals dataset"
+    assert not item("The dataset is the SLTDA monthly arrivals dataset.", FieldName.DATASET).hedged
+
+
+@pytest.mark.parametrize("message", ["We only have a laptop, no GPU.", "We don't have a GPU.",
+                                     "We do not have any GPUs.", "We have no GPU."])
+def test_saying_there_is_no_gpu_is_saved_as_cpu_only(message):
+    assert item(message, FieldName.RESOURCES).value == "CPU only"
+
+
+def test_a_gpu_is_still_a_gpu():
+    assert item("We will use a GPU.", FieldName.RESOURCES).value == "GPU"

@@ -68,12 +68,22 @@ def test_without_an_intent_model_nothing_changes():
 
 
 def test_an_old_proposal_is_no_longer_the_topic():
+    # Reply linking looks back over the last 15 messages (linking/predict.py WINDOW); older is too far.
+    a = agent()
+    a.on_message("m1", "M-1", XGB, 0)
+    for i in range(16):
+        a.on_message(f"f{i}", "M-2", "what time is the lab tomorrow", 10 + i)
+    a.on_message("m9", "M-2", LOCK, 100)
+    assert algorithm_numbers(a)[0] == 1.0
+
+
+def test_a_reply_after_some_small_talk_still_reaches_the_only_proposal():
     a = agent()
     a.on_message("m1", "M-1", XGB, 0)
     for i in range(6):
         a.on_message(f"f{i}", "M-2", "what time is the lab tomorrow", 10 + i)
     a.on_message("m9", "M-2", LOCK, 100)
-    assert algorithm_numbers(a)[0] == 1.0
+    assert algorithm_numbers(a)[0] == 2.0
 
 def restarted(old):
     """A new agent rebuilt from the saved history of an old one, like after a server restart."""
@@ -106,3 +116,15 @@ def test_after_a_restart_you_still_cannot_back_your_own_proposal():
     b = restarted(a)
     b.on_message("m2", "M-1", LOCK, 10)
     assert algorithm_numbers(b)[0] == 1.0
+
+def test_a_short_yes_answers_buddys_question_about_a_document_suggestion():
+    from component1.documents.candidates import Candidate
+    from component1.common.schema import FieldName
+    a = agent()                                   # the pretend intent model says "other" to "Yes, use that."
+    a.on_message("m1", "M-1", "Hello team.", 0)
+    a.candidates = {"objective": Candidate("objective", "help hotels plan staff", "d1", "brief.txt", None,
+                                           "The objective is to help hotels plan staff", fact_ids=["f1"])}
+    asked = a.tick(300)
+    assert any("brief.txt" in r for r in asked)
+    a.on_message("m2", "M-2", "Yes, use that.", 320)
+    assert a.store.state.fields[FieldName.OBJECTIVE].value == "help hotels plan staff"

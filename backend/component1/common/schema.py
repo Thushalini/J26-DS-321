@@ -29,6 +29,7 @@ class FieldName(str, Enum):
     EVALUATION_METRIC = "evaluation_metric"
     RESOURCES = "resources"
     TIMELINE = "timeline"      # the overall deadline or project length; named milestones are decisions
+    DATASET_SIZE = "dataset_size"   # how many rows the dataset has, e.g. "10000 rows"
 
 
 class FieldStatus(str, Enum):
@@ -70,6 +71,7 @@ DEPENDS_ON: dict[FieldName, list[FieldName]] = {
     FieldName.EVALUATION_METRIC: [FieldName.TASK_TYPE],
     FieldName.RESOURCES: [FieldName.ALGORITHM],
     FieldName.TIMELINE: [FieldName.PROBLEM],   # worth asking once the team knows what it is building
+    FieldName.DATASET_SIZE: [FieldName.DATASET],
 }
 
 BASE_WEIGHT: dict[FieldName, int] = {
@@ -82,6 +84,7 @@ BASE_WEIGHT: dict[FieldName, int] = {
     FieldName.ALGORITHM: 6,
     FieldName.EVALUATION_METRIC: 6,
     FieldName.TIMELINE: 5,                     # after the core plan, before compute resources
+    FieldName.DATASET_SIZE: 4,                 # needed for the feasibility check
     FieldName.RESOURCES: 3,
 }
 
@@ -123,8 +126,12 @@ class Decision(BaseModel):
     status: DecisionStatus = DecisionStatus.PROPOSED
     proposed_by: str
     agreed_by: list[str] = Field(default_factory=list)
+    objected_by: list[str] = Field(default_factory=list)
     rationale: Optional[str] = None
     supersedes: Optional[str] = None    # decision_id this one replaces
+    source_id: Optional[str] = None     # the message (or document) it came from
+    pending_reason: Optional[str] = None            # why Domino validation asked for a re-check
+    held_status: Optional["DecisionStatus"] = None  # the status to go back to once the re-check passes
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -149,6 +156,7 @@ class EventType(str, Enum):
     FIELD_UPDATED = "field_updated"
     DECISION_RECORDED = "decision_recorded"
     DECISION_STATUS_CHANGED = "decision_status_changed"
+    DECISION_UPDATED = "decision_updated"     # who agreed / objected, or the reason, changed; status did not
     SCORES_UPDATED = "scores_updated"
 
 

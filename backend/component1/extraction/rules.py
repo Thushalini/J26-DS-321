@@ -23,6 +23,7 @@ from typing import Iterable, Optional
 from ..common.schema import FieldName
 from ..timeline.find import find_timeline
 from .extractor import ExtractedItem
+from .size import find_sizes
 
 # ------------------------------------------------------------------ word lists
 # canonical value -> spellings to look for (matched as whole words, any case)
@@ -30,15 +31,15 @@ ALGORITHMS: dict[str, list[str]] = {
     "XGBoost": ["xgboost", "xg boost", "xgb"],
     "LightGBM": ["lightgbm", "light gbm"],
     "CatBoost": ["catboost"],
-    "Random Forest": ["random forests?", "random-forests?"],
+    "Random Forest": ["random forests?", "random-forests?", "rf"],
     "Decision Tree": ["decision trees?"],
-    "Gradient Boosting": ["gradient boosting", "gradient boosted trees"],
+    "Gradient Boosting": ["gradient boosting", "gradient boosted trees", "gbm", "gbdt", "gbt"],
     "AdaBoost": ["adaboost"],
     "Logistic Regression": ["logistic regression"],
     "Linear Regression": ["linear regression"],
     "Ridge Regression": ["ridge regression"],
     "Lasso Regression": ["lasso regression", "lasso"],
-    "SVM": ["svm", "svms", "support vector machines?", "support vector classifier", "svr"],
+    "SVM": ["svm", "svms", "support vector machines?", "support vector classifier", "svr", "svc"],
     "KNN": ["knn", "k-nn", "k nearest neighbou?rs?", "k-nearest neighbou?rs?"],
     "Naive Bayes": ["naive bayes", "naïve bayes"],
     "K-Means": ["k-means", "kmeans", "k means"],
@@ -52,7 +53,7 @@ ALGORITHMS: dict[str, list[str]] = {
     "RNN": ["rnn", "rnns", "recurrent neural networks?"],
     "Transformer": ["transformers?"],
     "BERT": ["bert", "roberta", "distilbert"],
-    "Neural Network": ["neural networks?", "neural nets?", "mlp", "deep learning"],
+    "Neural Network": ["neural networks?", "neural nets?", "mlp", "ann", "deep learning"],
 }
 
 METRICS: dict[str, list[str]] = {
@@ -64,7 +65,7 @@ METRICS: dict[str, list[str]] = {
     "Accuracy": ["accuracy"],
     "Precision": ["precision"],
     "Recall": ["recall"],
-    "F1-score": ["f1", "f1-score", "f1 score", "f-score", "f score"],
+    "F1-score": ["f1", "f1-score", "f1 score", "f-score", "f score", "f-measure", "f1-measure"],
     "ROC AUC": ["roc auc", "roc-auc", "auc", "auroc"],
     "Log Loss": ["log loss", "logloss", "cross-entropy"],
     "Silhouette Score": ["silhouette score", "silhouette"],
@@ -104,6 +105,10 @@ RESOURCES: dict[str, list[str]] = {
     "AWS": ["aws", "amazon web services"],
     "Azure": ["azure"],
     "Google Cloud": ["gcp", "google cloud"],
+    # Saying there is NO GPU is also a fact about resources: the checks then know it, not just guess it.
+    "CPU only": ["cpu only", "cpu-only", "only (?:a |the )?cpus?", "laptops?", "no gpus?", "without (?:a )?gpus?",
+                 "(?:don'?t|do not|doesn'?t|does not) have (?:a |any )?gpus?",
+                 "no access to (?:a )?gpus?"],
 }
 
 HEDGE_WORDS = [
@@ -115,7 +120,7 @@ HEDGE_WORDS = [
 # A value named right after one of these is being rejected, not proposed.
 NEGATION = re.compile(
     r"\b(?:not|no|never|don'?t|do not|doesn'?t|avoid|without|instead of|rather than|except|"
-    r"drop|skip|scrap)\s+(?:use\s+|using\s+|the\s+|a\s+|an\s+)?(?:\w+\s+){0,1}$",
+    r"drop|skip|scrap)\s+(?:use\s+|using\s+|have\s+|has\s+|the\s+|a\s+|an\s+)?(?:\w+\s+){0,1}$",
     re.IGNORECASE,
 )
 
@@ -249,15 +254,16 @@ def _vocab_hits(message, field, compiled, taken):
 
 
 def _pattern_hits(message, field, patterns, taken, canonical=None):
-    hits = []
+    hits, own = [], []      # own: values already read by an earlier (more specific) pattern for this field
     for pattern in patterns:
         for m in pattern.finditer(message):
             value = _clean(m.group("v"))
             if value is None or _rejected(message, m.start()):
                 continue
             # The span is the whole phrase ("predict tourist arrivals"), so the reader sees the evidence.
-            if _overlaps(m.start("v"), m.end("v"), taken):
+            if _overlaps(m.start("v"), m.end("v"), taken) or _overlaps(m.start("v"), m.end("v"), own):
                 continue
+            own.append((m.start("v"), m.end("v")))
             hits.append((m.start(), m.end(), field, canonical(value) if canonical else value))
     return hits
 
@@ -285,6 +291,12 @@ def rule_items(message: str) -> list[ExtractedItem]:
     hits += _pattern_hits(message, FieldName.PROBLEM, _PROBLEM_PATTERNS, taken)
     hits += _pattern_hits(message, FieldName.OBJECTIVE, _OBJECTIVE_PATTERNS, taken)
 
+    # Dataset size: "10k rows" -> "10000 rows"
+    for words, rows in find_sizes(message):
+        start = message.find(words)
+        if not _rejected(message, start):
+            hits.append((start, start + len(words), FieldName.DATASET_SIZE, f"{rows} rows"))
+
     # Timeline: the overall deadline or length is one value like any field; milestones are extra items.
     overall, milestones = find_timeline(message)
     for found in overall:
@@ -311,6 +323,25 @@ def rule_items(message: str) -> list[ExtractedItem]:
             seen.add(found.value.lower())
             items.append(ExtractedItem(field=FieldName.TIMELINE, value=found.value, span=found.span, hedged=hedged))
     return items
+
+
+_CANONICAL = {"algorithm": _ALGORITHMS, "metric": _METRICS, "task": _TASK_TYPES, "resource": _RESOURCES}
+
+
+def canonical_names(kind: str, text: Optional[str]) -> list[str]:
+    """The known names in a value, in standard spelling: canonical_names("algorithm", "an xgboost model")
+    -> ["XGBoost"]. kind is algorithm, metric, task or resource. Empty if none is recognised."""
+    if not text:
+        return []
+    found, taken = [], []
+    if kind == "task":       # "logistic regression" is an algorithm, not the task "regression"
+        taken = [(m.start(), m.end()) for _, p in _ALGORITHMS for m in p.finditer(text)]
+    for canonical, pattern in _CANONICAL[kind]:
+        for m in pattern.finditer(text):
+            if not _overlaps(m.start(), m.end(), taken):
+                found.append((m.start(), canonical))
+                break
+    return [name for _, name in sorted(found)]
 
 
 def looks_like_planning(message: str) -> bool:

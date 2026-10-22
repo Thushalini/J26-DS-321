@@ -261,8 +261,10 @@ class AgentService:
         timestamp: Timestamp = None,
         user_id: Optional[str] = None,
         sender_type: str = "member",
+        reply_to: Optional[str] = None,
     ) -> list[str]:
-        """Call this after the message is saved. Returns what Buddy said (usually nothing)."""
+        """Call this after the message is saved. Returns what Buddy said (usually nothing).
+        reply_to: the message the person answered with the app's Reply button, if any."""
         conn = None
         try:
             if sender_type != "member":      # never react to Buddy's own messages
@@ -283,7 +285,7 @@ class AgentService:
                     seen.add(message_id)      # a failed message is skipped, not retried
                 speaker = speaker_for(member_code, user_id)
                 now = _seconds_or_now(timestamp)
-                replies = agent.on_message(message_id, speaker, text, now)
+                replies = agent.on_message(message_id, speaker, text, now, reply_to=reply_to)
                 if conn is not None:
                     ts_text = timestamp if isinstance(timestamp, str) else _ts_text(now)
                     self._persist(conn, team_id, agent, replies, ts_text, now, message_id)
@@ -459,8 +461,10 @@ def handle_chat_message(
     timestamp: Timestamp = None,
     user_id: Optional[str] = None,
     sender_type: str = "member",
+    reply_to: Optional[str] = None,
 ) -> list[str]:
-    return default_service().handle_chat_message(team_id, message_id, member_code, text, timestamp, user_id, sender_type)
+    return default_service().handle_chat_message(team_id, message_id, member_code, text, timestamp, user_id,
+                                                 sender_type, reply_to)
 
 
 def tick_all(now: Timestamp = None) -> dict[str, list[str]]:
