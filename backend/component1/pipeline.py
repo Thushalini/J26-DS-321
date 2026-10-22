@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping, Optional
 
+from .active.priority import enabled as active_enabled, question_signals
+from .active.risk import default_bundle as risk_bundle
 from .agent.signals import CHECK, CONFLICT, FOUND, GAP, SAVED, Signal
 from .checks.plan_checks import check_signals, record_checks, run_checks
 from .decisions.tracker import resolved_by_decision, turned_down
@@ -26,6 +28,7 @@ from .extraction.extractor import LLMFn, apply_message
 from .gaps.gaps import ready_gaps
 from .state.features import EXTRACTOR_ACTOR, field_features, mentions_for_field
 from .state.predict import predict_status
+from .timeline.current import current_timeline
 
 STATE_ACTOR = "state_classifier"
 
@@ -73,14 +76,23 @@ def state_signals(store: EventStore, candidates: Optional[Mapping[str, Any]] = N
                if d.status == DecisionStatus.PENDING_FIX and not d.decision_id.startswith("ms:")}
     for field, d in pending.items():
         signals.append(Signal(CHECK, field, (d.value,), detail=d.pending_reason or "it needs a re-check."))
-    signals.extend(s for s in check_signals(run_checks(state, store.events)) if s.field not in pending)
+    checks = [s for s in check_signals(run_checks(state, store.events)) if s.field not in pending]
+    signals.extend(checks)
     if candidates:
         missing = [n for n in FieldName if state.fields[n].status == FieldStatus.MISSING and n.value in candidates]
         for name in sorted(missing, key=lambda n: -BASE_WEIGHT[n]):
             c = candidates[name.value]
             signals.append(Signal(FOUND, name.value, (c.value,), source=c.source_label))
-    for name in ready_gaps(state):
-        signals.append(Signal(GAP, name.value))
+    if active_enabled():
+        # Gap, confirm and clarify questions, scored by priority (active/priority.py). Fields Buddy is
+        # already warning about (a plan check or a Domino re-check) get no second question.
+        t = current_timeline(state, store.events)
+        days_left = t.get("days_left") if t else None
+        warned = set(pending) | {s.field for s in checks}
+        signals.extend(question_signals(state, store.events, risk_bundle(), days_left, skip=warned))
+    else:
+        for name in ready_gaps(state):
+            signals.append(Signal(GAP, name.value))
     return signals
 
 

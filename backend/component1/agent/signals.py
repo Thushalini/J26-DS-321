@@ -14,6 +14,8 @@ CHECK = "check"          # a check found a possible problem (compatibility, data
 FOUND = "found"          # a candidate value was found in the uploaded documents
 GAP = "gap"              # a field is still missing and ready to be asked about
 FINALIZED = "finalized"  # a decision was just finalized (a calm moment)
+CONFIRM = "confirm"      # a field likely to be disputed or changed soon: ask the team to confirm it
+CLARIFY = "clarify"      # a field whose value is too vague to build on: ask for the detail
 
 
 @dataclass(frozen=True)
@@ -22,13 +24,16 @@ class Signal:
 
     values: the value(s) involved. One value for SAVED and FOUND, two or more for CONFLICT.
     detail: SAVED -> a short note such as "marked uncertain". CHECK -> what the problem is.
+            CONFIRM -> why the field is at risk. CLARIFY -> the question to ask. GAP -> why it matters.
     source: where it came from, e.g. "Member_A", "Proposal.pdf p.4" or "rule table".
+    priority: for GAP, CONFIRM and CLARIFY, how worth asking it is (active/priority.py); 0 = not scored.
     """
     kind: str
     field: str
     values: tuple[str, ...] = ()
     detail: str = ""
     source: str = ""
+    priority: float = 0.0
 
     @property
     def key(self) -> tuple:

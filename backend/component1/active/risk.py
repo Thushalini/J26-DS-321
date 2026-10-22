@@ -65,8 +65,10 @@ def reasons_for(bundle: dict, x: list[float]) -> list[str]:
     return [t for t, _ in sorted(found.items(), key=lambda kv: -kv[1])][:MAX_REASONS]
 
 
-def field_risks(bundle: Optional[dict], state, events: Iterable, days_left: Optional[float] = None) -> dict:
-    """field -> {"risk", "reasons"} for every field that has a value and is not already disputed."""
+def field_risks(bundle: Optional[dict], state, events: Iterable, days_left: Optional[float] = None,
+                with_reasons: bool = True) -> dict:
+    """field -> {"risk", "reasons"} for every field that has a value and is not already disputed.
+    with_reasons=False skips the explanations (they cost one extra prediction per fact)."""
     if bundle is None:
         return {}
     events = list(events)
@@ -78,7 +80,7 @@ def field_risks(bundle: Optional[dict], state, events: Iterable, days_left: Opti
         x = field_risk_features(state, events, field, days_left)
         if x is None:
             continue
-        out[field] = {"risk": round(risk_of(bundle, x), 3), "reasons": reasons_for(bundle, x)}
+        out[field] = {"risk": round(risk_of(bundle, x), 3), "reasons": reasons_for(bundle, x) if with_reasons else []}
     return out
 
 

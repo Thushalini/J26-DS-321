@@ -36,6 +36,13 @@ VALUES = {
 }
 FIELDS = list(VALUES)                 # the timeline is not simulated: it is used as days_left instead
 REASONS = ["it fits the data", "the classes are imbalanced", "it is easy to explain", "we have little time"]
+# Only used when vague_rate > 0 (sim_policies.py): a first answer that is too vague to build on.
+VAGUE_VALUES = {
+    "problem": "data analysis", "domain": "data science", "objective": "get good results", "dataset": "Kaggle data",
+    "target_variable": "the output", "task_type": "prediction", "algorithm": "machine learning",
+    "evaluation_metric": "performance", "resources": "the cloud",
+}
+SPONTANEOUS_CLARIFY = 0.15      # p(someone makes a vague value specific without being asked), per turn on it
 
 ASSUMPTIONS = {
     "disagreement": (1.2, 2.5),             # Beta(a, b): hidden disagreement per field
@@ -83,8 +90,26 @@ def _parent_moved(st, field) -> bool:
     return False
 
 
-def simulate_team(rng, a: dict = ASSUMPTIONS):
-    """One team's planning history. Returns (rows, labels): rows are (features, step, field)."""
+def _descendants_in_play(st, field) -> bool:
+    from ..decisions.domino import descendants
+    return any(current_decision(st, c) is not None for c in descendants(field) if c in VALUES)
+
+
+def _complete(st) -> bool:
+    """Every simulated field settled, specific and undisputed."""
+    vague = set(VAGUE_VALUES.values())
+    return all(_settled(st, f) and current_decision(st, f).value not in vague and not in_dispute(st, f)
+               for f in FIELDS)
+
+
+def simulate_team(rng, a: dict = ASSUMPTIONS, asker=None, vague_rate: float = 0.0, ask_every: int = 6,
+                  outcome: dict | None = None, snapshots: bool = True):
+    """One team's planning history. Returns (rows, labels): rows are (features, step, field).
+
+    For comparing question strategies (sim_policies.py): asker(state, events, days_left) returns the
+    (kind, field) Buddy asks every ask_every messages, or None; the team's next message answers it.
+    vague_rate: share of first answers that are too vague. outcome: filled with what happened.
+    With the defaults nothing extra is drawn, so the risk model's training data does not change."""
     os.environ["C1_NLI"] = "off"                 # values here differ by name; no meaning model needed
     store = EventStore("sim")
     speakers = [f"M-{i}" for i in range(1, int(rng.integers(2, 6)) + 1)]
@@ -95,32 +120,60 @@ def simulate_team(rng, a: dict = ASSUMPTIONS):
     deadline_known = rng.random() < a["deadline_known"]
     new_values: list[tuple[int, str]] = []       # (step, field) whenever a NEW value is proposed
     rows = []
+    track = {"rework": 0, "changes": 0, "asked": 0, "completed_at": None}
+    vague = set(VAGUE_VALUES.values())
 
     def say(field, value, speaker, step, hedged, intent=None):
         why = f" because {rng.choice(REASONS)}" if rng.random() < a["reason"][0] + a["reason"][1] * careful else ""
         _mention(store, field, value, speaker, step, hedged)
         if find_active(st, field, value) is None:
             new_values.append((step, field))
+            if current_decision(st, field) is not None:            # a change, not a first answer
+                track["changes"] += 1
+                if _descendants_in_play(st, field):                 # later fields were built on it: rework
+                    track["rework"] += 1
         on_statement(store, field, value, speaker, f"s{step}", f"Let's use {value}{why}.", intent)
 
     for step in range(1, steps + 1):
         days_left = max(0.0, days0 - step * a["days_per_step"])
         st = store.state
+        if outcome is not None and track["completed_at"] is None and _complete(st):
+            track["completed_at"] = step
+        asked = None
+        if asker is not None and step % ask_every == 0:
+            asked = asker(st, store.events, days_left if deadline_known else None)
+            if asked is not None and asked[1] not in VALUES:
+                asked = None
+            track["asked"] += asked is not None
         open_fields = [f for f in FIELDS if current_decision(st, f) is None and _ready(st, f)]
         started = [f for f in FIELDS if current_decision(st, f) is not None]
         weights = [3.0] * len(open_fields) + [2.0 if not _settled(st, f) else 0.5 for f in started]
         choices = open_fields + started
         if not choices:
             continue
-        field = choices[int(rng.choice(len(choices), p=np.array(weights) / sum(weights)))]
+        field = asked[1] if asked else choices[int(rng.choice(len(choices), p=np.array(weights) / sum(weights)))]
         d = hidden[field]
         speaker = str(rng.choice(speakers))
         others = [s for s in speakers if s != speaker] or speakers
         hedged = rng.random() < a["hedge"][0] + a["hedge"][1] * d
         cur = current_decision(st, field)
 
-        if cur is None:                                           # first value for the field
-            say(field, str(rng.choice(VALUES[field])), speaker, step, hedged)
+        specific = [v for v in VALUES[field] if cur is None or v != cur.value]
+        if asked and asked[0] == "confirm" and cur is not None and not in_dispute(st, field):
+            if rng.random() < d:                                  # asking brings the disagreement out now
+                say(field, str(rng.choice(specific)), str(rng.choice(others)), step, hedged)
+            else:
+                backer = str(rng.choice([s for s in speakers if s != cur.proposed_by] or speakers))
+                say(field, cur.value, backer, step, False, intent="agreement")
+        elif asked and asked[0] == "clarify" and cur is not None and cur.value in vague:
+            say(field, str(rng.choice(specific)), speaker, step, False)
+        elif cur is None:                                         # first value for the field
+            value = str(rng.choice(VALUES[field]))
+            if vague_rate and field in VAGUE_VALUES and rng.random() < vague_rate:
+                value = VAGUE_VALUES[field]
+            say(field, value, speaker, step, hedged)
+        elif vague_rate and cur.value in vague and not in_dispute(st, field) and rng.random() < SPONTANEOUS_CLARIFY:
+            say(field, str(rng.choice(specific)), speaker, step, False)
         elif in_dispute(st, field):                              # settle the disagreement
             options = [x for x in st.decisions.values()
                        if x.field.value == field and x.status.value in ("proposed", "confirmed", "finalized")]
@@ -148,7 +201,7 @@ def simulate_team(rng, a: dict = ASSUMPTIONS):
             else:                                                 # a repeat, unsure more often if disputed
                 _mention(store, field, cur.value, str(rng.choice(others)), step, hedged)
 
-        if step % a["snapshot_every"] == 0 and step >= 8:
+        if snapshots and step % a["snapshot_every"] == 0 and step >= 8:
             st = store.state
             for f in FIELDS:
                 if in_dispute(st, f):
@@ -157,6 +210,12 @@ def simulate_team(rng, a: dict = ASSUMPTIONS):
                 if x is not None:
                     rows.append((x, step, f))
 
+    if outcome is not None:
+        st = store.state
+        if track["completed_at"] is None and _complete(st):
+            track["completed_at"] = steps
+        outcome.update(track, steps=steps,
+                       vague_left=sum(1 for f in FIELDS if (c := current_decision(st, f)) and c.value in vague))
     labels = [int(any(f == g and step < s <= step + a["horizon"] for s, g in new_values)) for _, step, f in rows]
     keep = [i for i, (_, step, _) in enumerate(rows) if step + a["horizon"] <= steps]   # full horizon only
     return [rows[i] for i in keep], [labels[i] for i in keep]

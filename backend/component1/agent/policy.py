@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from .signals import CHECK, CONFLICT, FINALIZED, FOUND, GAP, SAVED, Signal
+from .signals import CHECK, CLARIFY, CONFIRM, CONFLICT, FINALIZED, FOUND, GAP, SAVED, Signal
 
 
 @dataclass(frozen=True)
@@ -79,6 +79,20 @@ def gap_text(signal: Signal) -> str:
     return f"I noticed there is no decision yet on the {field_label(signal.field)}. Could someone confirm what it will be?"
 
 
+def confirm_text(signal: Signal) -> str:
+    value = signal.values[0] if signal.values else ""
+    reasons = [r for r in signal.detail.split("; ") if r]
+    why = " and ".join(reasons) if reasons else "it may still change"
+    return f"Can someone confirm the {field_label(signal.field)}: {value}? I ask because {why}."
+
+
+def clarify_text(signal: Signal) -> str:
+    return f"A detail is missing: {signal.detail}"
+
+
+ASK_TEXT = {GAP: gap_text, CONFIRM: confirm_text, CLARIFY: clarify_text}
+
+
 class Buddy:
     def __init__(self, config: BuddyConfig = BuddyConfig()):
         self.config = config
@@ -135,11 +149,15 @@ class Buddy:
         if found is not None:
             return found, found_text(found)
 
+        # Gap, confirm and clarify questions share the last slot. Scored ones (active/priority.py) go by
+        # priority; unscored ones keep the order they came in (the old fixed order, most important gap first).
         found_fields = {x.field for x in signals if x.kind == FOUND}
-        gaps = [x for x in signals if x.kind == GAP and x.field not in found_fields]
-        gap = self._first_unsaid(gaps, now)
-        if gap is not None:
-            return gap, gap_text(gap)
+        asks = [x for x in signals if x.kind in ASK_TEXT and x.field not in found_fields]
+        if any(x.priority for x in asks):
+            asks = sorted(asks, key=lambda x: -x.priority)
+        ask = self._first_unsaid(asks, now)
+        if ask is not None:
+            return ask, ASK_TEXT[ask.kind](ask)
         return None
 
     def _is_new(self, signal: Signal, now: float) -> bool:

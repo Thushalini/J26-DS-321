@@ -1,0 +1,141 @@
+{
+  "data": {
+    "kind": "SIMULATED teams (active/simulate.py, sim_policies.py). Not real chat.",
+    "teams": 150,
+    "vague_rate": 0.25,
+    "ask_every": 6
+  },
+  "strategies": {
+    "none": {
+      "messages_to_complete": 71.5,
+      "rework": 2.72,
+      "changes": 5.8,
+      "vague_left": 0.87,
+      "completed_share": 0.313,
+      "questions_asked": 0.0
+    },
+    "fixed": {
+      "messages_to_complete": 70.58,
+      "rework": 2.63,
+      "changes": 5.65,
+      "vague_left": 0.82,
+      "completed_share": 0.373,
+      "questions_asked": 2.5
+    },
+    "priority_v1": {
+      "messages_to_complete": 51.47,
+      "rework": 3.64,
+      "changes": 8.13,
+      "vague_left": 0.1,
+      "completed_share": 0.8,
+      "questions_asked": 6.9
+    },
+    "priority": {
+      "messages_to_complete": 50.61,
+      "rework": 3.59,
+      "changes": 8.29,
+      "vague_left": 0.06,
+      "completed_share": 0.82,
+      "questions_asked": 6.6
+    },
+    "random": {
+      "messages_to_complete": 50.4,
+      "rework": 3.61,
+      "changes": 7.84,
+      "vague_left": 0.08,
+      "completed_share": 0.827,
+      "questions_asked": 6.8
+    }
+  },
+  "priority_minus_fixed": {
+    "messages_to_complete": {
+      "mean": -19.97,
+      "ci95": [
+        -24.02,
+        -16.09
+      ]
+    },
+    "rework": {
+      "mean": 0.95,
+      "ci95": [
+        0.6,
+        1.25
+      ]
+    },
+    "changes": {
+      "mean": 2.65,
+      "ci95": [
+        2.19,
+        3.1
+      ]
+    },
+    "vague_left": {
+      "mean": -0.76,
+      "ci95": [
+        -0.91,
+        -0.6
+      ]
+    }
+  },
+  "priority_minus_priority_v1": {
+    "messages_to_complete": {
+      "mean": -0.85,
+      "ci95": [
+        -3.13,
+        1.37
+      ]
+    },
+    "rework": {
+      "mean": -0.05,
+      "ci95": [
+        -0.37,
+        0.25
+      ]
+    },
+    "changes": {
+      "mean": 0.17,
+      "ci95": [
+        -0.2,
+        0.52
+      ]
+    },
+    "vague_left": {
+      "mean": -0.04,
+      "ci95": [
+        -0.09,
+        0.0
+      ]
+    }
+  },
+  "priority_minus_random": {
+    "messages_to_complete": {
+      "mean": 0.21,
+      "ci95": [
+        -3.29,
+        3.59
+      ]
+    },
+    "rework": {
+      "mean": -0.02,
+      "ci95": [
+        -0.37,
+        0.31
+      ]
+    },
+    "changes": {
+      "mean": 0.45,
+      "ci95": [
+        -0.05,
+        0.93
+      ]
+    },
+    "vague_left": {
+      "mean": -0.02,
+      "ci95": [
+        -0.07,
+        0.03
+      ]
+    }
+  },
+  "note": "EXPERIMENT, not kept: 'confirm first' (a CONFIRM question counted up to x2 while the fields that depend on it were open; a GAP waited x (1 - risk) while a field it depends on was at risk). It did not beat the first version or random questions on rework or speed (every 95% interval includes 0), so it was removed. 'priority' here is the experiment, 'priority_v1' the kept version."
+}

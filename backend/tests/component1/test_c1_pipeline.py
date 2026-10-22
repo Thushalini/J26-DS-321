@@ -93,10 +93,20 @@ def test_the_saved_signal_names_the_speaker_and_the_status():
     assert saved.values == ("tourist arrivals",)
 
 
-def test_gap_signals_skip_filled_fields_and_follow_importance_order():
+def test_gap_signals_skip_filled_fields_and_follow_importance_order(monkeypatch):
+    monkeypatch.setenv("C1_ACTIVE", "off")           # the old fixed order (importance weight only)
     store = EventStore("p1")
     r = run(store, says("problem", "forecast arrivals", "forecast arrivals"), "M1", "Member_A", "we need to forecast arrivals")
     assert [s.field for s in r.signals if s.kind == GAP] == ["objective", "dataset", "domain", "timeline"]
+    assert all(s.priority == 0 for s in r.signals)
+
+
+def test_with_priorities_a_field_others_depend_on_is_asked_first():
+    store = EventStore("p1")
+    r = run(store, says("problem", "forecast arrivals", "forecast arrivals"), "M1", "Member_A", "we need to forecast arrivals")
+    gaps = [s for s in r.signals if s.kind == GAP]
+    assert [s.field for s in gaps] == ["dataset", "objective", "domain", "timeline"]   # most other fields depend on the dataset
+    assert gaps[0].priority > gaps[1].priority > 0 and "depend on it" in gaps[0].detail
 
 
 def test_the_fields_confidence_is_the_models_probability():

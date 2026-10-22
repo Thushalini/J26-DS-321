@@ -1,0 +1,102 @@
+{
+  "data": {
+    "kind": "SIMULATED teams (active/simulate.py, sim_policies.py). Not real chat.",
+    "teams": 150,
+    "vague_rate": 0.25,
+    "ask_every": 6
+  },
+  "strategies": {
+    "none": {
+      "messages_to_complete": 71.5,
+      "rework": 2.72,
+      "changes": 5.8,
+      "vague_left": 0.87,
+      "completed_share": 0.313,
+      "questions_asked": 0.0
+    },
+    "fixed": {
+      "messages_to_complete": 70.58,
+      "rework": 2.63,
+      "changes": 5.65,
+      "vague_left": 0.82,
+      "completed_share": 0.373,
+      "questions_asked": 2.5
+    },
+    "priority": {
+      "messages_to_complete": 51.47,
+      "rework": 3.64,
+      "changes": 8.13,
+      "vague_left": 0.1,
+      "completed_share": 0.8,
+      "questions_asked": 6.9
+    },
+    "random": {
+      "messages_to_complete": 51.34,
+      "rework": 3.75,
+      "changes": 8.12,
+      "vague_left": 0.05,
+      "completed_share": 0.873,
+      "questions_asked": 6.8
+    }
+  },
+  "priority_minus_fixed": {
+    "messages_to_complete": {
+      "mean": -19.11,
+      "ci95": [
+        -23.13,
+        -15.05
+      ]
+    },
+    "rework": {
+      "mean": 1.01,
+      "ci95": [
+        0.67,
+        1.34
+      ]
+    },
+    "changes": {
+      "mean": 2.48,
+      "ci95": [
+        2.01,
+        2.95
+      ]
+    },
+    "vague_left": {
+      "mean": -0.72,
+      "ci95": [
+        -0.87,
+        -0.56
+      ]
+    }
+  },
+  "priority_minus_random": {
+    "messages_to_complete": {
+      "mean": 0.13,
+      "ci95": [
+        -3.37,
+        3.65
+      ]
+    },
+    "rework": {
+      "mean": -0.11,
+      "ci95": [
+        -0.51,
+        0.3
+      ]
+    },
+    "changes": {
+      "mean": 0.01,
+      "ci95": [
+        -0.51,
+        0.55
+      ]
+    },
+    "vague_left": {
+      "mean": 0.05,
+      "ci95": [
+        -0.02,
+        0.11
+      ]
+    }
+  }
+}

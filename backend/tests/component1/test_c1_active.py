@@ -156,3 +156,110 @@ def test_vague_fields_skips_missing_and_disputed_fields():
     mention(s, "dataset", "Kaggle data", "M-1")
     s.update_field(FieldName.DATASET, "Kaggle data", FieldStatus.CONFLICTING, 0.5, None, "state_classifier")
     assert set(vague_fields(s.state)) == {"algorithm"}
+
+
+# --------------------------------------------------------------- priority
+from component1.active.priority import impact, question_signals, urgency  # noqa: E402
+from component1.active.simulate import simulate_team  # noqa: E402
+from component1.agent.policy import Buddy, clarify_text, confirm_text  # noqa: E402
+from component1.agent.signals import CHECK, CLARIFY, CONFIRM, CONFLICT, GAP, Signal  # noqa: E402
+from component1.pipeline import state_signals  # noqa: E402
+
+
+class FixedRisk:
+    """A pretend risk model that gives every field the same risk."""
+    def __init__(self, p):
+        self.p = p
+
+    def predict_proba(self, X):
+        return np.array([[1 - self.p, self.p]] * len(X))
+
+
+def risky(p):
+    return {"model": FixedRisk(p), "features": FEATURE_NAMES, "safe_reference": [0.0] * len(FEATURE_NAMES)}
+
+
+def test_impact_counts_the_fields_that_depend_on_it():
+    assert impact("dataset") > impact("domain") and impact("problem") > impact("resources")
+
+
+def test_urgency_rises_near_the_deadline_mostly_for_build_fields():
+    assert urgency("algorithm", None, 0) == 1.0
+    assert urgency("algorithm", 3, 0) > urgency("domain", 3, 0) > 1.0
+    assert urgency("algorithm", 60, 0) == 1.0
+
+
+def test_gap_clarify_and_confirm_questions_are_scored():
+    s = EventStore("t")
+    mention(s, "problem", "forecasting arrivals", "M-1")
+    propose(s, "problem", "forecasting arrivals", "M-1", "m1")
+    mention(s, "algorithm", "Neural Network", "M-1")
+    propose(s, "algorithm", "Neural Network", "M-1", "m2")
+    qs = question_signals(s.state, s.events, risky(0.5))
+    kinds = {(q.kind, q.field) for q in qs}
+    assert (CLARIFY, "algorithm") in kinds                       # vague: asked to clarify, not to confirm
+    assert (CONFIRM, "algorithm") not in kinds and (CONFIRM, "problem") in kinds
+    assert (GAP, "dataset") in kinds
+    assert [q.priority for q in qs] == sorted((q.priority for q in qs), reverse=True)
+
+
+def test_low_risk_fields_and_warned_fields_get_no_question():
+    s = EventStore("t")
+    mention(s, "problem", "forecasting arrivals", "M-1")
+    propose(s, "problem", "forecasting arrivals", "M-1", "m1")
+    assert not any(q.kind == CONFIRM for q in question_signals(s.state, s.events, risky(0.1)))
+    assert not any(q.field == "problem" for q in question_signals(s.state, s.events, risky(0.9), skip={"problem"}))
+
+
+def test_buddy_asks_the_highest_priority_question_after_conflicts():
+    asks = [Signal(GAP, "domain", priority=1.0), Signal(CLARIFY, "algorithm", ("Neural Network",),
+                                                         detail="Which model exactly?", priority=2.0)]
+    b = Buddy()
+    assert "A detail is missing: Which model exactly?" in b.step(asks, 1000)[0]
+    b = Buddy()
+    reply = b.step(asks + [Signal(CONFLICT, "dataset", ("a", "b"))], 1000)[0]
+    assert "different answers" in reply
+
+
+def test_unscored_questions_keep_the_old_order():
+    b = Buddy()
+    assert "objective" in b.step([Signal(GAP, "objective"), Signal(GAP, "dataset")], 1000)[0]
+
+
+def test_confirm_and_clarify_wording():
+    c = Signal(CONFIRM, "target_variable", ("tourist arrivals",),
+               detail="only one person has mentioned it; the last mention sounded unsure")
+    assert confirm_text(c) == ("Can someone confirm the target variable: tourist arrivals? I ask because only one "
+                               "person has mentioned it and the last mention sounded unsure.")
+    assert clarify_text(Signal(CLARIFY, "dataset", detail="Which dataset exactly?")) == \
+        "A detail is missing: Which dataset exactly?"
+
+
+def test_the_switch_turns_the_new_questions_off(monkeypatch):
+    s = EventStore("t")
+    mention(s, "problem", "forecasting arrivals", "M-1")
+    propose(s, "problem", "forecasting arrivals", "M-1", "m1")
+    mention(s, "algorithm", "Neural Network", "M-1")
+    propose(s, "algorithm", "Neural Network", "M-1", "m2")
+    assert any(x.kind == CLARIFY for x in state_signals(s))
+    monkeypatch.setenv("C1_ACTIVE", "off")
+    assert not any(x.kind in (CLARIFY, CONFIRM) or x.priority for x in state_signals(s))
+
+
+def test_a_plan_check_warning_replaces_a_second_question_about_the_same_field():
+    s = EventStore("t")
+    for f, v in [("task_type", "regression"), ("evaluation_metric", "performance")]:
+        mention(s, f, v, "M-1")
+        propose(s, f, v, "M-1", f)
+    sig = state_signals(s)
+    warned = {x.field for x in sig if x.kind == CHECK}
+    assert not any(x.kind in (CLARIFY, CONFIRM) and x.field in warned for x in sig)
+
+
+# ------------------------------------------------------- question strategy
+def test_an_asked_team_reports_its_outcome():
+    out = {}
+    simulate_team(np.random.default_rng(4), asker=lambda st, ev, d: ("gap", "problem"), vague_rate=0.25,
+                  outcome=out, snapshots=False)
+    assert {"rework", "changes", "asked", "completed_at", "steps", "vague_left"} <= set(out)
+    assert out["asked"] > 0
