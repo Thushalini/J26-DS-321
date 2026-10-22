@@ -1,0 +1,104 @@
+{
+  "pairs": 32,
+  "free_text_pairs": 21,
+  "methods": {
+    "exact": {
+      "all": {
+        "accuracy": 0.438,
+        "macro_f1": 0.304,
+        "mistakes": [
+          "algorithm: 'RF' vs 'random forest' (said different)",
+          "algorithm: 'GBM' vs 'gradient boosting' (said different)",
+          "algorithm: 'ANN' vs 'neural network' (said different)",
+          "algorithm: 'svc' vs 'SVM' (said different)",
+          "evaluation_metric: 'f-measure' vs 'F1' (said different)",
+          "task_type: 'classification' vs 'classifying' (said different)",
+          "target_variable: 'monthly tourist arrivals' vs 'tourist arrivals' (said different)",
+          "target_variable: 'customer churn' vs 'churn' (said different)",
+          "target_variable: 'house price' vs 'sale price of the house' (said different)",
+          "target_variable: 'daily sales' vs 'sales per day' (said different)",
+          "dataset: 'Kaggle hotel bookings' vs 'hotel bookings data from Kaggle' (said different)",
+          "dataset: 'UCI heart disease' vs 'heart disease data from UCI' (said different)",
+          "problem: 'predicting tourist arrivals' vs 'forecasting how many tourists will arrive' (said different)",
+          "problem: 'spotting fraudulent transactions' vs 'fraud detection in payments' (said different)",
+          "domain: 'tourism' vs 'travel and tourism' (said different)",
+          "domain: 'finance' vs 'banking and finance' (said different)",
+          "objective: 'reduce customer churn' vs 'lower the number of customers who leave' (said different)",
+          "objective: 'improve hotel planning' vs 'help hotels plan staff' (said different)"
+        ]
+      },
+      "free_text": {
+        "accuracy": 0.429,
+        "macro_f1": 0.3,
+        "mistakes": [
+          "target_variable: 'monthly tourist arrivals' vs 'tourist arrivals' (said different)",
+          "target_variable: 'customer churn' vs 'churn' (said different)",
+          "target_variable: 'house price' vs 'sale price of the house' (said different)",
+          "target_variable: 'daily sales' vs 'sales per day' (said different)",
+          "dataset: 'Kaggle hotel bookings' vs 'hotel bookings data from Kaggle' (said different)",
+          "dataset: 'UCI heart disease' vs 'heart disease data from UCI' (said different)",
+          "problem: 'predicting tourist arrivals' vs 'forecasting how many tourists will arrive' (said different)",
+          "problem: 'spotting fraudulent transactions' vs 'fraud detection in payments' (said different)",
+          "domain: 'tourism' vs 'travel and tourism' (said different)",
+          "domain: 'finance' vs 'banking and finance' (said different)",
+          "objective: 'reduce customer churn' vs 'lower the number of customers who leave' (said different)",
+          "objective: 'improve hotel planning' vs 'help hotels plan staff' (said different)"
+        ]
+      }
+    },
+    "names": {
+      "all": {
+        "accuracy": 0.625,
+        "macro_f1": 0.6,
+        "mistakes": [
+          "target_variable: 'monthly tourist arrivals' vs 'tourist arrivals' (said different)",
+          "target_variable: 'customer churn' vs 'churn' (said different)",
+          "target_variable: 'house price' vs 'sale price of the house' (said different)",
+          "target_variable: 'daily sales' vs 'sales per day' (said different)",
+          "dataset: 'Kaggle hotel bookings' vs 'hotel bookings data from Kaggle' (said different)",
+          "dataset: 'UCI heart disease' vs 'heart disease data from UCI' (said different)",
+          "problem: 'predicting tourist arrivals' vs 'forecasting how many tourists will arrive' (said different)",
+          "problem: 'spotting fraudulent transactions' vs 'fraud detection in payments' (said different)",
+          "domain: 'tourism' vs 'travel and tourism' (said different)",
+          "domain: 'finance' vs 'banking and finance' (said different)",
+          "objective: 'reduce customer churn' vs 'lower the number of customers who leave' (said different)",
+          "objective: 'improve hotel planning' vs 'help hotels plan staff' (said different)"
+        ]
+      },
+      "free_text": {
+        "accuracy": 0.429,
+        "macro_f1": 0.3,
+        "mistakes": [
+          "target_variable: 'monthly tourist arrivals' vs 'tourist arrivals' (said different)",
+          "target_variable: 'customer churn' vs 'churn' (said different)",
+          "target_variable: 'house price' vs 'sale price of the house' (said different)",
+          "target_variable: 'daily sales' vs 'sales per day' (said different)",
+          "dataset: 'Kaggle hotel bookings' vs 'hotel bookings data from Kaggle' (said different)",
+          "dataset: 'UCI heart disease' vs 'heart disease data from UCI' (said different)",
+          "problem: 'predicting tourist arrivals' vs 'forecasting how many tourists will arrive' (said different)",
+          "problem: 'spotting fraudulent transactions' vs 'fraud detection in payments' (said different)",
+          "domain: 'tourism' vs 'travel and tourism' (said different)",
+          "domain: 'finance' vs 'banking and finance' (said different)",
+          "objective: 'reduce customer churn' vs 'lower the number of customers who leave' (said different)",
+          "objective: 'improve hotel planning' vs 'help hotels plan staff' (said different)"
+        ]
+      }
+    },
+    "names+nli": {
+      "all": {
+        "accuracy": 0.969,
+        "macro_f1": 0.968,
+        "mistakes": [
+          "domain: 'finance' vs 'banking and finance' (said different)"
+        ]
+      },
+      "free_text": {
+        "accuracy": 0.952,
+        "macro_f1": 0.952,
+        "mistakes": [
+          "domain: 'finance' vs 'banking and finance' (said different)"
+        ]
+      }
+    }
+  }
+}

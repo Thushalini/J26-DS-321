@@ -619,7 +619,8 @@ def post_chat(team_id: str, body: ChatIn, background: BackgroundTasks, user=Depe
                                          "in_app": True}}])
         stage, conf = classify(text)
         save_labels(conn, "baseline", [(aid, stage, conf)])      # trained model re-labels it at the next sync
-        run_in_background(background, team_id, msg_id, m["member_code"], user["user_id"], ts, text)   # Component 1 (Buddy)
+        run_in_background(background, team_id, msg_id, m["member_code"], user["user_id"], ts, text,
+                          reply_to=reply_to)   # Component 1 (Buddy); reply_to helps it link "agreed" to a proposal
     return {"msg_id": msg_id, "ts": ts}
 
 

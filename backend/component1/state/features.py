@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Iterable, Optional
 
+from ..conflicts.same import group_key
 from .normalize import normalize_value
 
 FEATURE_ORDER = ["source_count", "agreement", "latest_hedged", "distinct_speakers"]
@@ -31,7 +32,7 @@ def _plain(x):
 
 def mentions_for_field(events: Iterable, field_name) -> list[dict]:
     field_name = _plain(field_name)
-    mentions = []
+    mentions, seen = [], []
     for e in sorted(events, key=lambda e: getattr(e, "version", 0)):
         if _plain(e.event_type) != "field_updated" or e.actor != EXTRACTOR_ACTOR:
             continue
@@ -39,8 +40,12 @@ def mentions_for_field(events: Iterable, field_name) -> list[dict]:
         if p.get("field") != field_name:
             continue
         provenance = p.get("provenance") or {}
+        # Values that mean the same (RF / random forest) share one key: conflicts/same.py.
+        key = group_key(field_name, p["new_value"], seen)
+        if key == normalize_value(p["new_value"]):
+            seen.append(p["new_value"])
         mentions.append({
-            "value": normalize_value(p["new_value"]),
+            "value": key,
             "speaker": provenance.get("speaker"),
             "hedged": p.get("new_status") == "uncertain",
             "original": p["new_value"],

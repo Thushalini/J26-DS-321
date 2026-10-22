@@ -17,10 +17,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping, Optional
 
-from .agent.signals import CONFLICT, FOUND, GAP, SAVED, Signal
+from .agent.signals import CHECK, CONFLICT, FOUND, GAP, SAVED, Signal
 from .checks.plan_checks import check_signals, record_checks, run_checks
+from .decisions.tracker import resolved_by_decision
 from .common.events import EventStore
-from .common.schema import BASE_WEIGHT, FieldName, FieldStatus, Provenance, SourceType
+from .common.schema import BASE_WEIGHT, DecisionStatus, FieldName, FieldStatus, Provenance, SourceType
 from .extraction.extractor import LLMFn, apply_message
 from .gaps.gaps import ready_gaps
 from .state.features import EXTRACTOR_ACTOR, field_features, mentions_for_field
@@ -65,7 +66,13 @@ def state_signals(store: EventStore, candidates: Optional[Mapping[str, Any]] = N
     for name in FieldName:
         if state.fields[name].status == FieldStatus.CONFLICTING:
             signals.append(Signal(CONFLICT, name.value, _conflict_values(store, name.value)))
-    signals.extend(check_signals(run_checks(state, store.events)))    # parts of the plan that do not fit
+    # Domino validation: a decision set to pending_fix gets ONE message naming the change that caused
+    # it, instead of a second, plain plan-check warning about the same field.
+    pending = {d.field.value: d for d in state.decisions.values()
+               if d.status == DecisionStatus.PENDING_FIX and not d.decision_id.startswith("ms:")}
+    for field, d in pending.items():
+        signals.append(Signal(CHECK, field, (d.value,), detail=d.pending_reason or "it needs a re-check."))
+    signals.extend(s for s in check_signals(run_checks(state, store.events)) if s.field not in pending)
     if candidates:
         missing = [n for n in FieldName if state.fields[n].status == FieldStatus.MISSING and n.value in candidates]
         for name in sorted(missing, key=lambda n: -BASE_WEIGHT[n]):
@@ -79,6 +86,7 @@ def state_signals(store: EventStore, candidates: Optional[Mapping[str, Any]] = N
 def judge_field(store: EventStore, bundle: dict, field: str) -> tuple[str, float]:
     """Ask the state classifier how settled a field is, and record that judgement as an event."""
     label, probability = predict_status(bundle, field_features(store.events, field))
+    label = resolved_by_decision(store.state, field, label)
     name = FieldName(field)
     # No new evidence is attached: this event only records the judgement.
     store.update_field(name, store.state.fields[name].value, FieldStatus(label), probability, None, STATE_ACTOR)

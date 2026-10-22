@@ -126,8 +126,12 @@ class Decision(BaseModel):
     status: DecisionStatus = DecisionStatus.PROPOSED
     proposed_by: str
     agreed_by: list[str] = Field(default_factory=list)
+    objected_by: list[str] = Field(default_factory=list)
     rationale: Optional[str] = None
     supersedes: Optional[str] = None    # decision_id this one replaces
+    source_id: Optional[str] = None     # the message (or document) it came from
+    pending_reason: Optional[str] = None            # why Domino validation asked for a re-check
+    held_status: Optional["DecisionStatus"] = None  # the status to go back to once the re-check passes
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -152,6 +156,7 @@ class EventType(str, Enum):
     FIELD_UPDATED = "field_updated"
     DECISION_RECORDED = "decision_recorded"
     DECISION_STATUS_CHANGED = "decision_status_changed"
+    DECISION_UPDATED = "decision_updated"     # who agreed / objected, or the reason, changed; status did not
     SCORES_UPDATED = "scores_updated"
 
 

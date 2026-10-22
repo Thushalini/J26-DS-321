@@ -15,6 +15,7 @@ import {
   type PlanDocument,
   type PlanField,
   type PlanCheck,
+  type PlanDecision,
   type PlanFeasibilityModel,
   type PlanHistoryEntry,
   type PlanMilestone,
@@ -36,6 +37,85 @@ const CHECK_LOOK: Record<string, { word: string; mark: string; cls: string }> = 
   pass: { word: "Fits", mark: "✓", cls: "border-status-good text-status-good bg-status-good/10" },
   warning: { word: "Check this", mark: "!", cls: "border-status-warning text-foreground bg-status-warning/10" },
   fail: { word: "Does not fit", mark: "✕", cls: "border-status-critical text-status-critical bg-status-critical/10" },
+}
+
+const DECISION_LOOK: Record<string, string> = {
+  proposed: "border-border text-muted",
+  confirmed: "border-primary text-primary bg-primary/10",
+  finalized: "border-status-good text-status-good bg-status-good/10",
+  pending_fix: "border-status-warning text-foreground bg-status-warning/10",
+  rejected: "border-status-critical text-status-critical bg-status-critical/10",
+  superseded: "border-border text-muted",
+}
+const TIMELINE_WORD: Record<string, string> = {
+  proposed: "proposed", confirmed: "confirmed", finalized: "finalized", rejected: "rejected",
+  superseded: "replaced", pending_fix: "flagged for re-check", updated: "updated",
+}
+
+function DecisionsCard({ d }: { d: NonNullable<PlanData["decisions"]> }) {
+  const others = d.all.filter((x) => !d.current.some((c) => c.decision_id === x.decision_id))
+  return (
+    <Card
+      title="Decisions"
+      note="What the team decided, who proposed it, why, and who agreed. A decision is finalized once someone other than the proposer backs it. If an earlier choice changes, later decisions that may no longer fit are flagged for a re-check."
+    >
+      {d.current.length === 0 ? (
+        <p className="text-sm text-muted">No decisions yet. They appear as the team proposes and agrees on choices in the chat.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {d.needs_recheck.length > 0 && (
+            <Notice tone="error">
+              {d.needs_recheck.length === 1 ? "1 decision needs" : `${d.needs_recheck.length} decisions need`} a re-check
+              after an earlier choice changed.
+            </Notice>
+          )}
+          <ul className="flex flex-col gap-1.5">
+            {d.current.map((x) => <DecisionItem key={x.decision_id} x={x} />)}
+          </ul>
+          {others.length > 0 && (
+            <details>
+              <summary className="cursor-pointer text-xs text-primary">Earlier and rejected proposals ({others.length})</summary>
+              <ul className="mt-1 flex flex-col gap-1.5">
+                {others.map((x) => <DecisionItem key={x.decision_id} x={x} />)}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function DecisionItem({ x }: { x: PlanDecision }) {
+  return (
+    <li className="rounded-bar border border-border px-2 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm"><span className="font-semibold">{x.label}:</span> {x.value}</span>
+        <span className={`rounded-full border px-2 py-0.5 text-xs ${DECISION_LOOK[x.status] ?? DECISION_LOOK.proposed}`}>
+          {x.status_text}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-muted">
+        Proposed by {x.proposed_by}
+        {x.agreed_by.length > 0 && ` · agreed by ${x.agreed_by.join(", ")}`}
+        {x.objected_by.length > 0 && ` · objected by ${x.objected_by.join(", ")}`}
+      </p>
+      {x.rationale && <p className="mt-0.5 text-xs">Why: {x.rationale}</p>}
+      {x.pending_reason && <p className="mt-0.5 text-xs text-status-critical">Re-check: {x.pending_reason}</p>}
+      {x.timeline && x.timeline.length > 1 && (
+        <details className="mt-0.5">
+          <summary className="cursor-pointer text-xs text-primary">How it got here</summary>
+          <ol className="mt-0.5 flex flex-col gap-0.5 border-l-2 border-border pl-2 text-xs text-muted">
+            {x.timeline.map((t, i) => (
+              <li key={i}>
+                {shortDate(t.time)} · {TIMELINE_WORD[t.what] ?? t.what}{t.by ? ` by ${t.by}` : ""}
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
+    </li>
+  )
 }
 
 const VERDICT: Record<string, { word: string; cls: string; bar: string }> = {
@@ -533,6 +613,8 @@ export function BlueprintPlan({ teamId }: { teamId: string }) {
           {plan.updated_at && <p className="text-xs text-muted">Last change {shortDate(plan.updated_at)}</p>}
         </div>
       </Card>
+
+      {plan.decisions && <DecisionsCard d={plan.decisions} />}
 
       {"feasibility_model" in plan && <FeasibilityCard f={plan.feasibility_model} />}
 
