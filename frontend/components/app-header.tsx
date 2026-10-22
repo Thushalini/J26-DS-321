@@ -22,7 +22,7 @@ export function AppHeader() {
         <div className="flex items-center gap-3 text-xs">
           <Link href="/guide" className="text-primary">Guide</Link>
           {staff && <Link href="/feedback" className="text-primary">Feedback</Link>}
-          <Link href="/account" className="text-primary">Change password</Link>
+          <Link href="/account" className="text-primary">My profile</Link>
           <button
             type="button"
             className="text-muted hover:text-foreground"
@@ -42,7 +42,7 @@ export function AppHeader() {
             <p className="truncate text-sm font-semibold">{team?.name ?? supervisorHeaderCopy.noGroup}</p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
-            {teams.some((t) => t.is_research) && (
+            {!supervisorLayout.researchInGroupList && teams.some((t) => t.is_research) && (
               <select
                 aria-label={supervisorHeaderCopy.researchLabel}
                 className="max-w-36 truncate rounded-lg border border-border bg-surface px-2 py-1 text-xs"

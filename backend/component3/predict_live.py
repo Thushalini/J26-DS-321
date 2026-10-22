@@ -158,6 +158,7 @@ def predict_run(run: dict, log_path=None) -> dict:
         "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "n_epochs": len(df),
+	"final_val_accuracy":final_val,
         "anomaly_score": round(anomaly, 4),
         "root_cause_probabilities": {c: round(float(p), 4)
                                      for c, p in zip(config.CAUSES, probs)},

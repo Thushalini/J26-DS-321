@@ -23,6 +23,7 @@ export const supervisorCopy = {
   groupsTitle: "My groups",
   groupsNote: "Tap a group to open its analytics. Dots follow Buddy's prediction unless you set one yourself.",
   setByYou: "status set by you",
+  researchTag: "Research dataset",
   buddyLabel: "Buddy: {label} ({probability}%)",
   buddyNoData: "Buddy: not enough data yet",
   noGroups: "No groups yet. Give students your supervisor code (bottom of this page) so they can add you.",
@@ -58,6 +59,7 @@ export const supervisorCopy = {
 
 export const supervisorLayout = {
   groupListAsPicker: true,
+  researchInGroupList: true,
   tabs: ["home", "behavior", "summary"],
   landing: "/teams",
   openGroupAt: "/behavior",

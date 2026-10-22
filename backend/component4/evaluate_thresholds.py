@@ -64,7 +64,7 @@ def live() -> dict:
 
     conn = c2db.connect()
     teams = [t for (t,) in conn.execute("SELECT team_id FROM teams").fetchall()]
-    projects = [team_project(conn, t) for t in teams]
+    projects = [team_project(conn, t, allow_network=False) for t in teams]
     signals = [len(FEATURES) - len(p["missing"]) for p in projects]
     return {
         "groups": len(teams),

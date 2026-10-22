@@ -49,13 +49,15 @@ export function SupervisedGroups({ teams, openId, onOpen, onChanged, onError }: 
               <button type="button" onClick={() => onOpen(t.team_id)} className="min-w-0 flex-1 p-1 text-left">
                 <span className="block truncate text-sm font-semibold">{t.name}</span>
                 <span className="block text-xs text-muted">
-                  {t.members ?? 0} {t.members === 1 ? "member" : "members"} · {t.activities ?? 0} activities · synced {shortDate(t.last_synced)}
+                  {t.is_research
+                    ? `${copy.researchTag} · ${t.activities ?? 0} activities`
+                    : `${t.members ?? 0} ${t.members === 1 ? "member" : "members"} · ${t.activities ?? 0} activities · synced ${shortDate(t.last_synced)}`}
                   {t.supervision_status && ` · ${copy.setByYou}`}
                 </span>
               </button>
               <StatusDot status={t.supervision_status ?? outlook[t.team_id]?.status} manual={Boolean(t.supervision_status)}
                          title={dotTitle(t.supervision_status, outlook[t.team_id])} />
-              <GroupMenu team={t} onChanged={onChanged} onError={onError} />
+              {!t.is_research && <GroupMenu team={t} onChanged={onChanged} onError={onError} />}
             </li>
           ))}
         </ul>

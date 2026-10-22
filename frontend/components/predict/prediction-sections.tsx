@@ -87,6 +87,45 @@ export function FactorsCard({ prediction }: { prediction: Prediction }) {
   )
 }
 
+export function TimelineCard({ prediction }: { prediction: Prediction }) {
+  const items = prediction.milestones ?? []
+  if (items.length === 0) return null
+  const copy = predictCopy.timeline
+  const basis = prediction.timelineBasis
+  const basisText = basis?.start && basis.startFrom
+    ? fill(basis.schedule ? copy.basis : copy.basisNoSchedule, {
+        schedule: basis.schedule ?? "",
+        status: copy.scheduleStatus[basis.scheduleStatus ?? ""] ?? basis.scheduleStatus ?? "",
+        start: formatDate(basis.start),
+        from: copy.startFrom[basis.startFrom],
+      })
+    : ""
+  return (
+    <SectionCard title={copy.title} description={copy.description}>
+      <ul className="flex flex-col divide-y divide-border">
+        {items.map((m) => {
+          const unchecked = m.stages.length === 0 && m.source === "schedule" ? copy.planning : copy.noStages
+          const state = !m.due ? copy.upcoming : m.met == null ? unchecked : m.met ? copy.met : copy.missed
+          const tone = !m.due || m.met == null ? "text-muted" : m.met ? "text-success" : "text-danger"
+          return (
+            <li key={`${m.name}-${m.date}`} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{m.name}</span>
+                {m.work && <span className="block text-xs text-muted">{m.work}</span>}
+                <span className="block text-xs text-muted">
+                  {formatDate(m.date)}{m.source === "schedule" && ` · ${copy.scheduleTag}`}
+                </span>
+              </span>
+              <span className={`shrink-0 text-xs font-semibold ${tone}`}>{state}</span>
+            </li>
+          )
+        })}
+      </ul>
+      {basisText && <p className="mt-3 text-xs text-muted">{basisText}</p>}
+    </SectionCard>
+  )
+}
+
 export function ForecastCard({ prediction }: { prediction: Prediction }) {
   return (
     <SectionCard title={predictCopy.forecast.title} description={predictCopy.forecast.description}>
@@ -107,7 +146,7 @@ export function ReadinessCard({ prediction }: { prediction: Prediction }) {
   return (
     <SectionCard
       title={predictCopy.readiness.title}
-      description={predictCopy.readiness.description}
+      description={readiness.basis === "names" ? predictCopy.readiness.namesOnly : predictCopy.readiness.description}
       aside={<ReadinessScore score={readiness.score} />}
     >
       <Readiness score={readiness.score} areas={readiness.areas} />

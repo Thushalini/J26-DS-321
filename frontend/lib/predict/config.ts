@@ -65,7 +65,8 @@ export const predictCopy = {
   },
   readiness: {
     title: "MLOps readiness",
-    description: "Draft rubric across four areas, scored from the file names in the group's repository.",
+    description: "Draft rubric across four areas. Buddy reads the group's key repo files: README, tests, CI, requirements and Dockerfile.",
+    namesOnly: "Draft rubric across four areas, from file names only: GitHub couldn't be read, so file contents weren't checked.",
     outOf: "out of",
   },
   recommendations: {
@@ -94,6 +95,26 @@ export const predictCopy = {
   pulse: {
     title: "Pulse",
     more: "See Predict for the reasons and what to do next.",
+  },
+  timeline: {
+    title: "Timeline",
+    description: "The shared final-year schedule plus the blueprint's own deadline and milestones. A milestone counts as met when Behavior and experiments show work in the stages expected by then.",
+    upcoming: "upcoming",
+    met: "met",
+    missed: "behind",
+    noStages: "no stages to check",
+    planning: "planning step",
+    scheduleTag: "shared schedule",
+    basis: "Shared schedule: {schedule} ({status}). Dates are counted from {start}, {from}.",
+    basisNoSchedule: "Dates are counted from {start}, {from}.",
+    startFrom: {
+      repo: "when the repo was created",
+      first_commit: "the first commit",
+      group: "when the group was made in Buddy",
+    },
+    scheduleStatus: {
+      sample: "entered by hand for now",
+    } as Record<string, string>,
   },
   milestones: {
     title: "Milestone results",
