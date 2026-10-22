@@ -132,3 +132,11 @@ def test_a_plain_agreement_goes_to_the_newest_proposal():
     a.on_message("p2", "M-2", "Let's use XGBoost.", 60)
     a.on_message("r1", "M-3", "Agreed.", 70)
     assert find_active(a.store.state, "algorithm", "XGBoost").status == DecisionStatus.CONFIRMED
+
+
+def test_a_plural_value_followed_by_a_comma_is_still_named():
+    older = proposal("p1", "M-1", 0, "The dataset is SLTDA monthly arrivals.", "dataset", "SLTDA monthly arrivals")
+    newer = proposal("p2", "M-2", 20, "The dataset is hotel booking records.", "dataset", "hotel booking records")
+    reply = Message("r", "M-3", 40, "SLTDA monthly arrivals, agreed.")
+    f_older = pair_features(reply, older, [older, newer], 1, False)
+    assert f_older[FEATURE_NAMES.index("names_the_value")] == 1.0

@@ -105,6 +105,10 @@ RESOURCES: dict[str, list[str]] = {
     "AWS": ["aws", "amazon web services"],
     "Azure": ["azure"],
     "Google Cloud": ["gcp", "google cloud"],
+    # Saying there is NO GPU is also a fact about resources: the checks then know it, not just guess it.
+    "CPU only": ["cpu only", "cpu-only", "only (?:a |the )?cpus?", "laptops?", "no gpus?", "without (?:a )?gpus?",
+                 "(?:don'?t|do not|doesn'?t|does not) have (?:a |any )?gpus?",
+                 "no access to (?:a )?gpus?"],
 }
 
 HEDGE_WORDS = [
@@ -116,7 +120,7 @@ HEDGE_WORDS = [
 # A value named right after one of these is being rejected, not proposed.
 NEGATION = re.compile(
     r"\b(?:not|no|never|don'?t|do not|doesn'?t|avoid|without|instead of|rather than|except|"
-    r"drop|skip|scrap)\s+(?:use\s+|using\s+|the\s+|a\s+|an\s+)?(?:\w+\s+){0,1}$",
+    r"drop|skip|scrap)\s+(?:use\s+|using\s+|have\s+|has\s+|the\s+|a\s+|an\s+)?(?:\w+\s+){0,1}$",
     re.IGNORECASE,
 )
 
@@ -250,15 +254,16 @@ def _vocab_hits(message, field, compiled, taken):
 
 
 def _pattern_hits(message, field, patterns, taken, canonical=None):
-    hits = []
+    hits, own = [], []      # own: values already read by an earlier (more specific) pattern for this field
     for pattern in patterns:
         for m in pattern.finditer(message):
             value = _clean(m.group("v"))
             if value is None or _rejected(message, m.start()):
                 continue
             # The span is the whole phrase ("predict tourist arrivals"), so the reader sees the evidence.
-            if _overlaps(m.start("v"), m.end("v"), taken):
+            if _overlaps(m.start("v"), m.end("v"), taken) or _overlaps(m.start("v"), m.end("v"), own):
                 continue
+            own.append((m.start("v"), m.end("v")))
             hits.append((m.start(), m.end(), field, canonical(value) if canonical else value))
     return hits
 

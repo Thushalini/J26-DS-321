@@ -19,7 +19,7 @@ from typing import Any, Mapping, Optional
 
 from .agent.signals import CHECK, CONFLICT, FOUND, GAP, SAVED, Signal
 from .checks.plan_checks import check_signals, record_checks, run_checks
-from .decisions.tracker import resolved_by_decision
+from .decisions.tracker import resolved_by_decision, turned_down
 from .common.events import EventStore
 from .common.schema import BASE_WEIGHT, DecisionStatus, FieldName, FieldStatus, Provenance, SourceType
 from .extraction.extractor import LLMFn, apply_message
@@ -49,7 +49,8 @@ def _conflict_values(store: EventStore, field: str) -> tuple[str, ...]:
     """The different values people gave, in the order they first appeared (original spelling)."""
     first_spelling: dict[str, str] = {}
     for mention in mentions_for_field(store.events, field):
-        first_spelling.setdefault(mention["value"], mention["original"])
+        if not turned_down(store.state, field, mention["original"]):     # rejected or replaced values drop out
+            first_spelling.setdefault(mention["value"], mention["original"])
     return tuple(first_spelling.values())
 
 
@@ -91,6 +92,13 @@ def judge_field(store: EventStore, bundle: dict, field: str) -> tuple[str, float
     # No new evidence is attached: this event only records the judgement.
     store.update_field(name, store.state.fields[name].value, FieldStatus(label), probability, None, STATE_ACTOR)
     return label, probability
+
+
+def judge_after_domino(store: EventStore, bundle: dict, changes) -> None:
+    """A decision Domino set to re-check (or restored) changes how settled its field is: judge it again,
+    so a field waiting for a re-check never still says "confirmed"."""
+    for field in sorted({c.field for c in changes if c.kind in ("pending_fix", "restored")}):
+        judge_field(store, bundle, field)
 
 
 def process_message(

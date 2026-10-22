@@ -281,3 +281,68 @@ def test_the_plan_carries_the_decisions():
     T.on_statement(store, "algorithm", "XGBoost", "M-1", "m1", "XGBoost")
     out = plan_from_events("t", store.events)
     assert [d["value"] for d in out["decisions"]["current"]] == ["XGBoost"]
+
+
+# ------------------------------------------------ found by manual testing
+def test_a_plain_agreed_confirms_the_field_not_just_the_decision():
+    agent = ChatAgent("t", BUNDLE, RULES)
+    agent.on_message("m1", "M-1", "Let's use F1 score as the metric.", 0)
+    agent.on_message("m2", "M-2", "Agreed.", 20)
+    assert agent.store.state.fields[FieldName.EVALUATION_METRIC].status == FieldStatus.CONFIRMED
+
+
+def test_restating_and_finalizing_in_one_message_gives_one_line():
+    agent = ChatAgent("t", BUNDLE, RULES)
+    agent.on_message("m1", "M-1", "This is a classification task.", 0)
+    replies = agent.on_message("m2", "M-2", "Classification, agreed, let's finalize it.", 20)
+    text = "\n".join(replies)
+    assert text.count("task type = classification") == 1
+    assert "decision finalized" in text
+
+
+def test_a_field_waiting_for_a_recheck_is_no_longer_confirmed():
+    agent = ChatAgent("t", BUNDLE, RULES)
+    for i, (who, text) in enumerate([
+        ("M-1", "This is a classification task."), ("M-2", "Agreed, finalize it."),
+        ("M-1", "We will use accuracy as the metric."), ("M-2", "Agreed, finalize it."),
+        ("M-3", "Actually it should be a regression task."), ("M-1", "Agreed, finalize it."),
+    ]):
+        agent.on_message(f"m{i + 1}", who, text, i * 20)
+    state = agent.store.state
+    assert any(d.status == S.PENDING_FIX and d.field == FieldName.EVALUATION_METRIC for d in state.decisions.values())
+    assert state.fields[FieldName.EVALUATION_METRIC].status != FieldStatus.CONFIRMED
+
+
+def test_naming_a_value_to_turn_it_down_is_an_objection():
+    store = EventStore("t")
+    T.propose(store, "resources", "AWS", "M-1", "m1")
+    T.on_statement(store, "resources", "AWS", "M-2", "m2", "No, AWS costs too much.", intent="rejection")
+    d = next(iter(store.state.decisions.values()))
+    assert d.status == S.REJECTED and d.objected_by == ["M-2"]
+
+
+def test_a_new_value_after_a_settled_decision_is_a_conflict_not_confirmed():
+    store = EventStore("t")
+    put_field(store, "algorithm", "Random Forest")
+    T.propose(store, "algorithm", "Random Forest", "M-1", "m1", status=S.CONFIRMED, agreed_by=["M-2"])
+    put_field(store, "algorithm", "Neural Network")
+    assert T.resolved_by_decision(store.state, "algorithm", "conflicting") == "conflicting"
+    assert T.resolved_by_decision(store.state, "algorithm", "confirmed") == "confirmed"
+
+
+def test_a_rejected_value_is_not_a_rival_any_more():
+    store = EventStore("t")
+    put_field(store, "resources", "AWS")
+    T.propose(store, "resources", "AWS", "M-1", "m1")
+    T.object_to(store, next(iter(store.state.decisions.values())), "M-2")
+    put_field(store, "resources", "CPU only")
+    assert T.resolved_by_decision(store.state, "resources", "conflicting") == "known"
+    assert T.turned_down(store.state, "resources", "AWS")
+
+
+def test_a_rejected_value_on_the_field_is_not_confirmed():
+    store = EventStore("t")
+    put_field(store, "resources", "AWS")
+    T.propose(store, "resources", "AWS", "M-1", "m1")
+    T.object_to(store, next(iter(store.state.decisions.values())), "M-2")
+    assert T.resolved_by_decision(store.state, "resources", "confirmed") == "uncertain"

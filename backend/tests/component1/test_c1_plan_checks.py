@@ -116,6 +116,11 @@ def test_deep_learning_without_compute_is_a_warning_and_a_gpu_makes_it_pass():
     assert "compute_fits_model" not in results(plan(task_type="classification", algorithm="XGBoost"))
 
 
+def test_a_team_without_a_gpu_is_told_so_not_that_nothing_was_mentioned():
+    r = results(plan(task_type="classification", algorithm="LSTM", resources="CPU only"))["compute_fits_model"]
+    assert r.status == "warning" and "the team said there is no GPU" in r.detail
+
+
 def test_deep_learning_with_little_time_left_is_a_warning():
     store = plan(task_type="classification", algorithm="BERT", resources="GPU", timeline="deadline 2026-11-01")
     r = results(store, today=date(2026, 10, 19))["timeline_fits_model"]

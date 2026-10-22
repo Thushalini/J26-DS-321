@@ -116,3 +116,15 @@ def test_after_a_restart_you_still_cannot_back_your_own_proposal():
     b = restarted(a)
     b.on_message("m2", "M-1", LOCK, 10)
     assert algorithm_numbers(b)[0] == 1.0
+
+def test_a_short_yes_answers_buddys_question_about_a_document_suggestion():
+    from component1.documents.candidates import Candidate
+    from component1.common.schema import FieldName
+    a = agent()                                   # the pretend intent model says "other" to "Yes, use that."
+    a.on_message("m1", "M-1", "Hello team.", 0)
+    a.candidates = {"objective": Candidate("objective", "help hotels plan staff", "d1", "brief.txt", None,
+                                           "The objective is to help hotels plan staff", fact_ids=["f1"])}
+    asked = a.tick(300)
+    assert any("brief.txt" in r for r in asked)
+    a.on_message("m2", "M-2", "Yes, use that.", 320)
+    assert a.store.state.fields[FieldName.OBJECTIVE].value == "help hotels plan staff"

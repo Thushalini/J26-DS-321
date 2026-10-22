@@ -182,11 +182,19 @@ def test_a_yes_from_a_member_after_buddy_asks_accepts_the_suggestion(db, monkeyp
     assert speakers == ["doc:Plan.txt", "M-2"]
 
 
-def test_without_the_intent_model_a_yes_changes_nothing(db):
+def test_without_the_intent_model_a_short_yes_to_buddys_question_still_accepts_it(db):
     svc = service(db)
     upload(svc, db)
     svc.tick("t1", T0)
     svc.handle_chat_message("t1", "m1", "M-2", "Yes, use that.", T0 + 5)
+    assert any(x["status"] == "accepted" for x in list_doc_facts(connector(db)(), "t1") if x["field"] == "dataset")
+
+
+def test_without_the_intent_model_a_longer_reply_changes_nothing(db):
+    svc = service(db)
+    upload(svc, db)
+    svc.tick("t1", T0)
+    svc.handle_chat_message("t1", "m1", "M-2", "Hmm, I am not sure about that one.", T0 + 5)
     assert all(x["status"] == "open" for x in list_doc_facts(connector(db)(), "t1") if x["field"] == "dataset")
 
 

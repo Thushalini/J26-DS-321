@@ -18,7 +18,7 @@ from ..decisions.domino import settle
 from ..decisions.tracker import record_document_decision
 from ..common.events import EventStore
 from ..common.schema import FieldName, FieldStatus, Provenance, SourceType
-from ..pipeline import judge_field
+from ..pipeline import judge_after_domino, judge_field
 from ..state.features import EXTRACTOR_ACTOR
 from .candidates import Candidate
 
@@ -62,5 +62,6 @@ def accept_candidate(
     # The decision record: proposed by the document, agreed by the member, so confirmed.
     changes = record_document_decision(store, candidate.field, candidate.value, candidate.filename, candidate.page,
                                        candidate.span, accepted_by, via or f"accept:{candidate.fact_ids[0]}")
-    settle(store, changes)            # Domino validation, if it replaced a settled decision
+    domino = settle(store, changes)   # Domino validation, if it replaced a settled decision
+    judge_after_domino(store, bundle, domino)
     return result

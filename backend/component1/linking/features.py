@@ -50,11 +50,16 @@ def _words(text: str) -> set[str]:
     return {w for w in _WORD.findall((text or "").lower()) if w not in _STOP and len(w) > 1}
 
 
+def _plain(text: str) -> str:
+    """Normalised with punctuation as spaces, so "arrivals," loses its plural "s" like "arrivals" does."""
+    return normalize_value(re.sub(r"[^\w\s]", " ", text or ""))
+
+
 def _mentions(text: str, value: Optional[str]) -> bool:
     if not value:
         return False
-    v = normalize_value(value)
-    return bool(v) and re.search(rf"(?<![a-z0-9]){re.escape(v)}(?![a-z0-9])", normalize_value(text)) is not None
+    v = _plain(value)
+    return bool(v) and re.search(rf"(?<![a-z0-9]){re.escape(v)}(?![a-z0-9])", _plain(text)) is not None
 
 
 def pair_features(reply: Message, candidate: Message, proposals_before: list[Message],

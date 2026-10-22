@@ -164,6 +164,8 @@ def on_statement(store: EventStore, field: str, value: str, speaker: str, source
     why = reason_in(text)
     if existing is None:
         return [propose(store, field, value, speaker, source_id, why)]
+    if intent == "rejection":              # "No, AWS costs too much": naming a value to turn it down
+        return object_to(store, existing, speaker)
     changes = endorse(store, existing, speaker, finalize=intent == "finalization")
     current = _decision(store, existing.decision_id)
     if why and not current.rationale:
@@ -194,14 +196,31 @@ def record_document_decision(store: EventStore, field: str, value: str, filename
     return [change, *_supersede_others(store, _decision(store, change.decision_id), accepted_by)]
 
 
+def turned_down(state, field: str, value: Optional[str]) -> bool:
+    """The value has decision records and none of them is still active (all rejected or replaced)."""
+    mine = [d for d in decisions_for(state, field) if same_value(field, d.value, value)]
+    return bool(mine) and all(d.status not in ACTIVE for d in mine)
+
+
 def resolved_by_decision(state, field: str, label: str) -> str:
     """The state classifier counts every mention ever made, so after a disagreement it keeps saying
-    "conflicting" even once the team settled it. If the field has a settled decision and every rival
-    value was replaced or rejected, the disagreement is over: the field is confirmed."""
-    if label != "conflicting":
+    "conflicting" even once the team settled it, and a value agreed with a plain "Agreed." (not repeated)
+    stays "known". If the field has a settled decision and every rival value was replaced or rejected,
+    the team has decided: the field is confirmed."""
+    value = state.fields[FieldName(field)].value
+    if label in ("confirmed", "known") and value and find_active(state, field, value) is None and any(
+            d.status == DecisionStatus.REJECTED and same_value(field, d.value, value) for d in decisions_for(state, field)):
+        return "uncertain"                 # the value on the field was turned down, so it is not settled
+    if label == "conflicting" and value and any(d.status not in ACTIVE for d in decisions_for(state, field))             and not any(not same_value(field, d.value, value) for d in active_for(state, field)):
+        label = "known"                    # every rival value was rejected or replaced: no one still holds one
+    if label not in ("conflicting", "known", "uncertain"):
         return label
     current = current_decision(state, field)
     if current is None or current.status not in SETTLED:
+        return label
+    # A new value said after the decision ("what about a neural network?") is a new disagreement,
+    # even before it is recorded as a proposal: the field is judged before the decision records are.
+    if value and not same_value(field, value, current.value):
         return label
     rivals = [d for d in active_for(state, field) if d.decision_id != current.decision_id]
     return "confirmed" if not rivals else label

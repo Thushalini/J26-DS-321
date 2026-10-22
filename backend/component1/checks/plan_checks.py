@@ -147,10 +147,12 @@ def run_checks(state, events: Iterable = (), today: Optional[date] = None,
         if compute & K.COMPUTE_RESOURCES:
             results.append(CheckResult("compute_fits_model", "resources", "pass", ""))
         else:
+            said = ("the team said there is no GPU (CPU only)" if "CPU only" in compute
+                    else "no GPU or cloud compute has been mentioned")
             results.append(CheckResult(
                 "compute_fits_model", "resources", "warning",
-                f"{algorithm} is a deep learning model, which usually needs a GPU, and no GPU or cloud compute "
-                f"has been mentioned. Google Colab has a free GPU; or consider {_or(baselines)}.",
+                f"{algorithm} is a deep learning model, which usually needs a GPU, and {said}. "
+                f"Google Colab has a free GPU; or consider {_or(baselines)}.",
                 ("Google Colab",) + baselines))
 
         t = current_timeline(state, events, today) if state.fields[FieldName.TIMELINE].status in WORKING else None

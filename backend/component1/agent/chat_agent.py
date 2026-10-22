@@ -22,6 +22,7 @@ Accept button. Accepted suggestions collect in `accepted` until the caller has s
 from __future__ import annotations
 
 import logging
+import re
 from typing import Optional
 
 from ..common.events import EventStore
@@ -33,7 +34,7 @@ from ..documents.integrate import accept_candidate, document_speaker
 from ..extraction.extractor import LLMFn
 from ..linking.features import Message
 from ..linking.predict import default_bundle as link_default_bundle, link_reply
-from ..pipeline import _SAVED_DETAIL, MessageResult, judge_field, process_message, state_signals
+from ..pipeline import _SAVED_DETAIL, MessageResult, judge_after_domino, judge_field, process_message, state_signals
 from ..state.features import EXTRACTOR_ACTOR
 from .policy import Buddy
 from .signals import FOUND, SAVED, Signal
@@ -45,6 +46,11 @@ HISTORY = 40                     # recent messages kept for reply linking
 _DEFAULT_LINKER = object()
 MIN_INTENT_CONFIDENCE = 0.5      # below this the intent label is ignored
 TOPIC_LIFETIME = 6               # messages after which a proposed value is no longer "the topic"
+# A short yes to Buddy's own question ("Should we use that?"). Only used for that question.
+_YES_TO_BUDDY = re.compile(
+    r"^\s*(?:yes|yeah|yep|yup|sure|ok(?:ay)?|sounds good|go ahead|please do|use (?:that|it)|let'?s use (?:that|it))"
+    r"\b[\s,.!]*(?:(?:please\s*)?(?:use|take|add) (?:that|it)[\s.!]*|please[\s.!]*|thanks?[\s.!]*)?$",
+    re.IGNORECASE)
 
 
 class ChatAgent:
@@ -145,6 +151,10 @@ class ChatAgent:
         field, value, proposer = parent[:3]
         if speaker == proposer:                      # agreeing with yourself is not confirmation
             return None
+        # Buddy just asked a yes/no question about a document suggestion: a short "yes" answers it,
+        # even when the intent model is unsure about so few words.
+        if str(proposer).startswith("doc:") and _YES_TO_BUDDY.match(text or ""):
+            return field, value
         found = self._intent(text)
         if found is None:
             return None
@@ -213,7 +223,9 @@ class ChatAgent:
         # Decision records and Domino validation (decisions/).
         decision_changes = [] if found is not None else self._track_decisions(
             message_id, speaker, text, stated, parent)
-        decision_changes += settle(self.store, decision_changes)
+        domino = settle(self.store, decision_changes)
+        judge_after_domino(self.store, self.bundle, domino)
+        decision_changes += domino
         self._remember(message_id, speaker, text, now, stated, parent)
 
         if stated:
@@ -221,8 +233,11 @@ class ChatAgent:
             self._topic = (field, value, speaker)
             self._since_topic = 0
         self._prev_text = text
-        signals = [self._final_status(s) for s in result.signals if s.kind == SAVED] \
-            + decision_signals(self.store, decision_changes) + state_signals(self.store, self.candidates)
+        # A message that restates a value AND finalizes it gets one line: the decision's ("finalized ...").
+        decided = decision_signals(self.store, decision_changes)
+        decided_fields = {s.field for s in decided if s.kind == SAVED}
+        signals = [self._final_status(s) for s in result.signals if s.kind == SAVED and s.field not in decided_fields] \
+            + decided + state_signals(self.store, self.candidates)
         replies = self.buddy.step(signals, now)
         self._after_step()
         return replies
@@ -263,8 +278,9 @@ class ChatAgent:
             # The proposer may finalize once someone else agreed (tracker.endorse checks that).
             if d is not None and (speaker != proposer or intent == "finalization"):
                 changes += on_reply(self.store, d, speaker, intent)
-        # A settled decision ends a disagreement: judge the touched fields again.
-        settled = {c.field for c in changes if c.kind in ("confirmed", "finalized", "reconfirmed", "superseded")}
+        # A settled (or rejected) decision changes how settled the field is: judge the touched fields again.
+        settled = {c.field for c in changes
+                   if c.kind in ("confirmed", "finalized", "reconfirmed", "superseded", "rejected")}
         for field in settled:
             judge_field(self.store, self.bundle, field)
         return changes
