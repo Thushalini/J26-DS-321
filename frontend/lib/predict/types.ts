@@ -57,6 +57,25 @@ export type Prediction = {
   laggingStages?: string[]
   weakStages?: WeakStage[]
   changes?: PredictionChanges | null
+  milestones?: Milestone[]
+  timelineBasis?: TimelineBasis | null
+}
+
+export type Milestone = {
+  name: string
+  date: string
+  stages: string[]
+  work?: string | null
+  source?: "schedule" | "group"
+  due?: boolean
+  met?: boolean | null
+}
+
+export type TimelineBasis = {
+  start: string | null
+  startFrom: "repo" | "first_commit" | "group" | null
+  schedule: string | null
+  scheduleStatus: string | null
 }
 
 export type PredictionChanges = {

@@ -96,6 +96,26 @@ export const predictCopy = {
     title: "Pulse",
     more: "See Predict for the reasons and what to do next.",
   },
+  timeline: {
+    title: "Timeline",
+    description: "The shared final-year schedule plus the blueprint's own deadline and milestones. A milestone counts as met when Behavior and experiments show work in the stages expected by then.",
+    upcoming: "upcoming",
+    met: "met",
+    missed: "behind",
+    noStages: "no stages to check",
+    planning: "planning step",
+    scheduleTag: "shared schedule",
+    basis: "Shared schedule: {schedule} ({status}). Dates are counted from {start}, {from}.",
+    basisNoSchedule: "Dates are counted from {start}, {from}.",
+    startFrom: {
+      repo: "when the repo was created",
+      first_commit: "the first commit",
+      group: "when the group was made in Buddy",
+    },
+    scheduleStatus: {
+      sample: "entered by hand for now",
+    } as Record<string, string>,
+  },
   milestones: {
     title: "Milestone results",
     description: "After each milestone (e.g. PP1, a viva), record how it went. Buddy compares this with its earlier predictions to check itself.",

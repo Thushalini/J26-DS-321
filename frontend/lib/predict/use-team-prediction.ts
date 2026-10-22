@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 
 import { api } from "@/lib/api"
-import type { ForecastPoint, Prediction, ReadinessArea, WeakStage } from "@/lib/predict/types"
+import type { ForecastPoint, Milestone, Prediction, ReadinessArea, TimelineBasis, WeakStage } from "@/lib/predict/types"
 
 type ApiPrediction = {
   source: "live" | "synthetic"
@@ -23,6 +23,8 @@ type ApiPrediction = {
   min_signals?: number
   lagging_stages?: string[]
   weak_stages?: WeakStage[]
+  milestones?: Milestone[]
+  timeline_basis?: { start: string | null; start_from: TimelineBasis["startFrom"]; schedule: string | null; schedule_status: string | null } | null
 }
 
 export function toPrediction(body: ApiPrediction): Prediction {
@@ -51,6 +53,11 @@ export function toPrediction(body: ApiPrediction): Prediction {
     minSignals: body.min_signals,
     laggingStages: body.lagging_stages ?? [],
     weakStages: body.weak_stages ?? [],
+    milestones: body.milestones ?? [],
+    timelineBasis: body.timeline_basis && {
+      start: body.timeline_basis.start, startFrom: body.timeline_basis.start_from,
+      schedule: body.timeline_basis.schedule, scheduleStatus: body.timeline_basis.schedule_status,
+    },
   }
 }
 
