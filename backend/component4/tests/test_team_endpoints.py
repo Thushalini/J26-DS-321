@@ -208,9 +208,16 @@ def test_todays_number_comes_with_a_range(app, busy_team):
 
 
 def test_supervisor_outlook_suggests_a_dot_per_group(app, team):
+    import component2.db as c2db
     client, _ = app
+    conn = c2db.connect()
+    conn.execute("INSERT INTO teams (team_id, name, is_research, created_at) VALUES (?, ?, 1, ?) ON CONFLICT (team_id) DO NOTHING",
+                 ("research__outlook", "research repo", "2026-10-22T00:00:00Z"))
+    conn.commit()
     rows = client.get("/c4/supervisor/outlook", headers=team["sup"]).json()
-    assert [r["team_id"] for r in rows] == [team["id"]] and rows[0]["status"] is None
+    ids = [r["team_id"] for r in rows]
+    assert ids[0] == team["id"] and rows[0]["status"] is None
+    assert "research__outlook" in ids and len(ids) == len(set(ids))
 
 
 def test_only_supervisors_get_an_outlook(app, team):
@@ -245,3 +252,17 @@ def test_results_are_paired_with_the_last_prediction_before_the_milestone(app, b
                 json={"milestone": "Viva", "milestone_date": "2099-01-01", "result": "passed_well"})
     paired = [p for p in milestone_results.paired_with_predictions(c2db.connect()) if p["team_id"] == busy_team["id"]]
     assert paired and paired[0]["probability_before"] is not None
+
+
+def test_readiness_reads_key_repo_files_when_the_group_has_a_github_link(app, monkeypatch):
+    from component4.m4_readiness import repo_scan
+    client, _ = app
+    files = {"README.md": "## Setup\npip install -r requirements.txt\n" + "word " * 120,
+             "tests/test_a.py": "def test_a():\n    pass\n" * 4, "requirements.txt": "pandas==2.2\n"}
+    monkeypatch.setattr(repo_scan, "github_fetcher", lambda owner, repo: ({p: len(t) for p, t in files.items()}, files.get))
+    lead, _ = account(client, "repo@t.io")
+    t = client.post("/app/teams", json={"name": "Repo", "repo_url": "https://github.com/team/project"}, headers=lead).json()
+    body = client.get(f"/c4/teams/{t['team_id']}/prediction", headers=lead).json()
+    assert body["readiness"]["basis"] == "contents"
+    pipeline = next(a for a in body["readiness"]["areas"] if a["id"] == "pipeline")
+    assert "automated tests (4 tests)" in pipeline["reason"]

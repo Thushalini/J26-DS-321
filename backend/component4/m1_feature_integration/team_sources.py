@@ -1,7 +1,7 @@
 """Collects a real team's signals from the other components' saved outputs in the shared database.
 
 Component 2: behaviour summary and member roles. Component 3: the team's scored runs (alerts).
-Module 4: MLOps readiness from the file names in the synced repository (names only, never contents).
+Module 4: MLOps readiness from the group's repo: key files read from GitHub (cached), else synced file names.
 Project health: reproducibility (repo files), data quality (C3 leakage + validation files) and model
 performance (C3's best validation score against the blueprint's target).
 Component 2's lagging stages are only trusted once the window has enough labelled work to judge stages.
@@ -12,6 +12,7 @@ import json
 from collections import Counter
 
 from ..common import config
+from ..m4_readiness import repo_scan
 from ..m4_readiness.rubric import assess
 from . import project_health
 from .assemble import assemble
@@ -32,7 +33,8 @@ def repo_files(conn, team_id: str) -> list[str]:
     return sorted(files)
 
 
-def team_project(conn, team_id: str) -> dict:
+def team_project(conn, team_id: str, allow_network: bool = True) -> dict:
+    """allow_network=False only uses a cached repo scan (for lists and read-only scripts)."""
     from component2.api import service as c2
     from component3.api import service as c3
 
@@ -40,12 +42,15 @@ def team_project(conn, team_id: str) -> dict:
     summary = _safe(lambda: c2.team_summary(conn, team_id, settings["c2_window_days"]))
     roles = _safe(lambda: c2.member_roles(conn, team_id, settings["c2_roles_window"]))
     alerts = (_safe(lambda: c3.alerts_payload(conn, team_id)) or {}).get("alerts") or None
-    files = _safe(lambda: repo_files(conn, team_id)) or []
-    readiness = assess(files)
+    team = _safe(lambda: conn.execute("SELECT repo_url, last_synced FROM teams WHERE team_id = ?", (team_id,)).fetchone())
+    scan = _safe(lambda: repo_scan.get(conn, team_id, *(team or (None, None)), allow_network=allow_network))
+    files = scan["files"] if scan else _safe(lambda: repo_files(conn, team_id)) or []
+    evidence = scan["evidence"] if scan else None
+    readiness = assess(files, evidence)
     metric = (_safe(lambda: conn.execute("SELECT metric FROM blueprints WHERE team_id = ?", (team_id,)).fetchone()) or [None])[0]
 
     project = assemble(c2_summary=summary, c2_roles=roles, c3_runs=alerts, readiness=readiness,
-                       project_health=project_health.features(alerts, files, metric))
+                       project_health=project_health.features(alerts, files, metric, evidence))
     open_causes = Counter(a.get("recommended_cause") for a in alerts or []
                           if a.get("is_issue") and not a.get("resolved") and a.get("recommended_cause"))
     project["cause_counts"] = dict(open_causes)

@@ -1,6 +1,6 @@
 """Project-health signals: reproducibility, data quality and model performance vs target.
 
-Reproducibility and the data-validation bonus come from repo file names (never contents), data quality
+Reproducibility comes from the repo (key file contents when a scan exists, else file names), data quality
 from Component 3's data-leakage probabilities, and performance from Component 3's best validation score
 against the group's target (a number in the blueprint's metric, else the default). Each one stays
 missing when its evidence is missing. No file counts towards both these and the readiness rubric.
@@ -15,10 +15,10 @@ SETTINGS = config.PROJECT_HEALTH
 TARGET_NUMBER = re.compile(r"(?<![\w.])(0?\.\d+|1(?:\.0+)?)(?![\w.])|(\d{1,3}(?:\.\d+)?)\s*%")
 
 
-def reproducibility(files: list[str]) -> float | None:
+def reproducibility(files: list[str], evidence: dict | None = None) -> float | None:
     if not files:
         return None
-    return round(check(SETTINGS["reproducibility"], normalise(files))["share"], 3)
+    return round(check(SETTINGS["reproducibility"], normalise(files), evidence)["share"], 3)
 
 
 def data_quality(runs: list[dict] | None, files: list[str]) -> float | None:
@@ -55,6 +55,6 @@ def model_performance(runs: list[dict] | None, metric_text: str | None) -> float
     return round(min(max(scores) / goal, 1.0), 3)
 
 
-def features(runs: list[dict] | None, files: list[str], metric_text: str | None) -> dict:
-    return {"reproducibility": reproducibility(files), "data_quality": data_quality(runs, files),
+def features(runs: list[dict] | None, files: list[str], metric_text: str | None, evidence: dict | None = None) -> dict:
+    return {"reproducibility": reproducibility(files, evidence), "data_quality": data_quality(runs, files),
             "model_performance": model_performance(runs, metric_text)}

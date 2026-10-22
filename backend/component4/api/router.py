@@ -242,7 +242,8 @@ def supervisor_outlook(user=Depends(current_user), conn=Depends(get_conn)):
     if user["role"] != "supervisor":
         raise HTTPException(403, "Only supervisors have a group list.")
     bundle = _ready()
-    teams = [team_id for (team_id,) in conn.execute(
+    supervised = [team_id for (team_id,) in conn.execute(
         "SELECT team_id FROM team_members WHERE user_id = ? AND team_role = 'supervisor' AND archived_at IS NULL",
         (user["user_id"],)).fetchall()]
-    return [outlook.team_outlook(conn, team_id, bundle) for team_id in teams]
+    research = [team_id for (team_id,) in conn.execute("SELECT team_id FROM teams WHERE is_research = 1").fetchall()]
+    return [outlook.team_outlook(conn, team_id, bundle) for team_id in dict.fromkeys(supervised + research)]
