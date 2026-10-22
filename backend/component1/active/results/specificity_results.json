@@ -1,0 +1,94 @@
+{
+  "pairs": 86,
+  "vague": 44,
+  "today_vague_word_list": {
+    "accuracy": 0.512,
+    "precision": 1.0,
+    "recall": 0.045,
+    "f1": 0.087,
+    "mistakes": [
+      "algorithm: 'Neural Network' (said specific)",
+      "algorithm: 'Transformer' (said specific)",
+      "algorithm: 'machine learning' (said specific)",
+      "algorithm: 'a deep learning model' (said specific)",
+      "algorithm: 'some ML model' (said specific)",
+      "algorithm: 'tree-based model' (said specific)",
+      "algorithm: 'ensemble method' (said specific)",
+      "evaluation_metric: 'performance' (said specific)",
+      "evaluation_metric: 'how well it does' (said specific)",
+      "evaluation_metric: 'error' (said specific)",
+      "evaluation_metric: 'good results' (said specific)",
+      "task_type: 'prediction' (said specific)",
+      "task_type: 'predictive modelling' (said specific)",
+      "task_type: 'analysis' (said specific)",
+      "task_type: 'machine learning' (said specific)",
+      "dataset: 'Kaggle data' (said specific)",
+      "dataset: 'a Kaggle dataset' (said specific)",
+      "dataset: 'data from Kaggle' (said specific)",
+      "dataset: 'online data' (said specific)",
+      "dataset: 'public data' (said specific)",
+      "dataset: 'government open data' (said specific)",
+      "target_variable: 'the output' (said specific)",
+      "target_variable: 'the label' (said specific)",
+      "target_variable: 'results' (said specific)",
+      "target_variable: 'the prediction' (said specific)",
+      "target_variable: 'final score' (said specific)",
+      "domain: 'data science' (said specific)",
+      "domain: 'business' (said specific)",
+      "domain: 'technology' (said specific)",
+      "domain: 'machine learning' (said specific)",
+      "problem: 'prediction' (said specific)",
+      "problem: 'data analysis' (said specific)",
+      "problem: 'build a model' (said specific)",
+      "objective: 'improve accuracy' (said specific)",
+      "objective: 'get good results' (said specific)",
+      "objective: 'make better insights' (said specific)",
+      "resources: 'the cloud' (said specific)",
+      "resources: 'a powerful computer' (said specific)",
+      "resources: 'a server' (said specific)",
+      "timeline: 'soon' (said specific)",
+      "timeline: 'end of semester' (said specific)",
+      "timeline: 'later this year' (said specific)"
+    ]
+  },
+  "specificity_check": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "mistakes": []
+  },
+  "holdout": {
+    "pairs": 24,
+    "vague": 12,
+    "today_vague_word_list": {
+      "accuracy": 0.5,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "mistakes": [
+        "algorithm: 'an unsupervised approach' (said specific)",
+        "algorithm: 'the best classifier' (said specific)",
+        "evaluation_metric: 'overall quality' (said specific)",
+        "task_type: 'data science' (said specific)",
+        "dataset: 'a dataset from GitHub' (said specific)",
+        "target_variable: 'the class' (said specific)",
+        "target_variable: 'values' (said specific)",
+        "domain: 'various industries' (said specific)",
+        "problem: 'do some analysis' (said specific)",
+        "objective: 'build a better model' (said specific)",
+        "resources: 'our machines' (said specific)",
+        "timeline: 'by the end of the year' (said specific)"
+      ]
+    },
+    "specificity_check": {
+      "accuracy": 0.958,
+      "precision": 1.0,
+      "recall": 0.917,
+      "f1": 0.957,
+      "mistakes": [
+        "domain: 'various industries' (said specific)"
+      ]
+    }
+  }
+}

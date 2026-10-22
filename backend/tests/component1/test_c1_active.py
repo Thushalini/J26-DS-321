@@ -120,3 +120,39 @@ def test_reasons_only_name_facts_that_raise_the_risk(bundle):
     x = list(bundle["safe_reference"])
     assert reasons_for(bundle, x) == []
     assert 0.0 <= risk_of(bundle, x) <= 1.0
+
+
+# ------------------------------------------------------------ specificity
+from component1.active.specific import clarify_question, vague_fields  # noqa: E402
+
+
+@pytest.mark.parametrize("field, value", [
+    ("algorithm", "Neural Network"), ("algorithm", "machine learning"), ("evaluation_metric", "performance"),
+    ("task_type", "prediction"), ("dataset", "Kaggle data"), ("target_variable", "the output"),
+    ("domain", "data science"), ("problem", "build a model"), ("resources", "the cloud"), ("timeline", "soon"),
+])
+def test_vague_values_get_a_question(field, value):
+    assert clarify_question(field, value)
+
+
+@pytest.mark.parametrize("field, value", [
+    ("algorithm", "XGBoost"), ("evaluation_metric", "RMSE"), ("task_type", "regression"),
+    ("dataset", "Kaggle hotel bookings dataset"), ("target_variable", "tourist arrivals"), ("domain", "tourism"),
+    ("problem", "predicting tourist arrivals for Sri Lanka"), ("resources", "CPU only"),
+    ("timeline", "deadline in 2 weeks"), ("timeline", "week 10"),
+])
+def test_specific_values_get_none(field, value):
+    assert clarify_question(field, value) is None
+
+
+def test_the_question_names_the_source_and_fits_the_task():
+    assert "Which Kaggle dataset exactly?" in clarify_question("dataset", "data from Kaggle")
+    assert "RMSE or MAE" in clarify_question("evaluation_metric", "error", task="regression")
+
+
+def test_vague_fields_skips_missing_and_disputed_fields():
+    s = EventStore("t")
+    mention(s, "algorithm", "Neural Network", "M-1")
+    mention(s, "dataset", "Kaggle data", "M-1")
+    s.update_field(FieldName.DATASET, "Kaggle data", FieldStatus.CONFLICTING, 0.5, None, "state_classifier")
+    assert set(vague_fields(s.state)) == {"algorithm"}
