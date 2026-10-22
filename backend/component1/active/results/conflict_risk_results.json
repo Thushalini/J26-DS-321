@@ -1,0 +1,99 @@
+{
+  "data": {
+    "kind": "SIMULATED planning histories (active/simulate.py). Not real chat.",
+    "teams": 600,
+    "rows": 76368,
+    "positive_rate": 0.104,
+    "rows_train": 53678,
+    "rows_validation": 11232,
+    "rows_test": 11458,
+    "assumptions": {
+      "disagreement": [
+        1.2,
+        2.5
+      ],
+      "steps": [
+        50,
+        110
+      ],
+      "days_per_step": 0.4,
+      "deadline_known": 0.6,
+      "hedge": [
+        0.15,
+        0.45
+      ],
+      "reason": [
+        0.2,
+        0.5
+      ],
+      "agree": [
+        0.1,
+        0.7
+      ],
+      "change": [
+        0.03,
+        0.3
+      ],
+      "change_if_settled": 0.4,
+      "change_if_parent_moved": 2.0,
+      "horizon": 15,
+      "snapshot_every": 4
+    }
+  },
+  "rule": {
+    "validation": {
+      "roc_auc": 0.691,
+      "pr_auc": 0.227,
+      "brier": 0.1428
+    },
+    "test": {
+      "roc_auc": 0.687,
+      "pr_auc": 0.236,
+      "brier": 0.1409
+    }
+  },
+  "logistic_regression": {
+    "validation": {
+      "roc_auc": 0.745,
+      "pr_auc": 0.301,
+      "brier": 0.0837
+    },
+    "test": {
+      "roc_auc": 0.74,
+      "pr_auc": 0.296,
+      "brier": 0.0853
+    }
+  },
+  "gradient_boosting": {
+    "validation": {
+      "roc_auc": 0.735,
+      "pr_auc": 0.29,
+      "brier": 0.0844
+    },
+    "test": {
+      "roc_auc": 0.726,
+      "pr_auc": 0.28,
+      "brier": 0.0866
+    }
+  },
+  "best": "logistic_regression",
+  "feature_importance_test": {
+    "is_settled": 0.1867,
+    "plan_settled_share": 0.0166,
+    "parent_changed_since": 0.0123,
+    "latest_hedged": 0.0119,
+    "agreement": 0.0054,
+    "log_days_left": 0.0044,
+    "deadline_known": 0.0027,
+    "times_changed": 0.002,
+    "n_agreed": 0.0017,
+    "n_objections": 0.0016,
+    "log_source_count": 0.0012,
+    "is_finalized": 0.0011,
+    "n_dependants": 0.001,
+    "distinct_speakers": 0.0009,
+    "related_disputed": 0.0003,
+    "log_staleness": 0.0,
+    "has_reason": -0.0008
+  }
+}
