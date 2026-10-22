@@ -1,5 +1,6 @@
 """The team endpoints on a throwaway SQLite database (never the shared one)."""
 import base64
+from datetime import datetime, timezone
 
 import joblib
 import pytest
@@ -87,7 +88,7 @@ def busy_team(app):
                                                 "anomaly_score": severity, "recommended_cause": cause,
                                                 "root_cause_probabilities": {}})
     c2db.save_activities(conn, [{"activity_id": "commit:busy:1", "team_id": t["team_id"], "source": "commit",
-                                 "member_id": None, "ts": "2026-10-01T00:00:00Z", "text": "start",
+                                 "member_id": None, "ts": datetime.now(timezone.utc).isoformat(), "text": "start",
                                  "meta": {"files": FILES}}])
     return {"id": t["team_id"], "lead": lead}
 
@@ -266,3 +267,53 @@ def test_readiness_reads_key_repo_files_when_the_group_has_a_github_link(app, mo
     assert body["readiness"]["basis"] == "contents"
     pipeline = next(a for a in body["readiness"]["areas"] if a["id"] == "pipeline")
     assert "automated tests (4 tests)" in pipeline["reason"]
+
+
+def test_component1_timeline_and_milestones_give_timeline_adherence(app):
+    import component2.db as c2db
+    from component1.common.events import EventStore
+    from component1.common.schema import FieldName, FieldStatus
+    from component1.storage import ensure_c1_tables, save_new_events
+    from component1.timeline.milestones import record_milestone
+    from component4.m1_feature_integration.team_sources import team_project
+    client, _ = app
+    lead, _ = account(client, "timeline@t.io")
+    t = client.post("/app/teams", json={"name": "Timeline"}, headers=lead).json()
+    store = EventStore(t["team_id"])
+    store.update_field(FieldName.TIMELINE, "deadline 2025-06-30", FieldStatus.CONFIRMED, 0.9, None, "test")
+    record_milestone(store, "milestone: Demo, 2025-03-01", "demo is on 1 March", "M-1", "m1")
+    store.update_scores(actor="test", feasibility={"model_feasibility": "pass", "compute_fits_model": "warning"})
+    conn = c2db.connect()
+    ensure_c1_tables(conn)
+    save_new_events(conn, t["team_id"], store.events)
+    project = team_project(conn, t["team_id"], allow_network=False)
+    own = [m for m in project["milestones"] if m["source"] == "group"]
+    assert [m["name"] for m in own] == ["Demo", "Final deadline"]
+    assert all(m["due"] and m["met"] is False for m in own)
+    assert project["features"]["timeline_adherence"] == 0.0
+    assert project["features"]["novelty_score"] is None
+    assert project["features"]["feasibility_score"] == 0.75
+    body = client.get(f"/c4/teams/{t['team_id']}/prediction", headers=lead).json()
+    assert [m["name"] for m in body["milestones"]][:2] == ["Demo", "Final deadline"]
+
+
+def test_every_group_gets_the_shared_schedule_from_its_start(app, team):
+    from component4.common import config
+    client, _ = app
+    body = client.get(f"/c4/teams/{team['id']}/prediction", headers=team["lead"]).json()
+    shared = [m for m in body["milestones"] if m["source"] == "schedule"]
+    assert [m["name"] for m in shared] == [m["name"] for m in config.COHORT_SCHEDULE["milestones"]]
+    assert not any(m["due"] for m in shared)
+    basis = body["timeline_basis"]
+    assert basis["start_from"] == "group" and basis["schedule"] == config.COHORT_SCHEDULE["name"]
+
+
+def test_research_teams_skip_the_shared_schedule(app):
+    import component2.db as c2db
+    from component4.m1_feature_integration.team_sources import team_project
+    conn = c2db.connect()
+    conn.execute("INSERT INTO teams (team_id, name, is_research, created_at) VALUES (?, ?, 1, ?) ON CONFLICT (team_id) DO NOTHING",
+                 ("research__schedule", "research repo", "2020-01-01T00:00:00Z"))
+    conn.commit()
+    project = team_project(conn, "research__schedule", allow_network=False)
+    assert project["milestones"] == [] and project["timeline_basis"]["schedule"] is None

@@ -54,11 +54,13 @@ def _get(url: str, raw: bool = False):
 
 
 def github_fetcher(owner: str, repo: str):
-    """Returns ({path: size} for every file on the default branch, a function that reads one file)."""
-    branch = _get(f"{SETTINGS['api']}/repos/{owner}/{repo}")["default_branch"]
+    """Returns ({path: size} for every file on the default branch, a function that reads one file, repo details)."""
+    meta = _get(f"{SETTINGS['api']}/repos/{owner}/{repo}")
+    branch = meta["default_branch"]
     tree = _get(f"{SETTINGS['api']}/repos/{owner}/{repo}/git/trees/{quote(branch)}?recursive=1")
     files = {item["path"]: item.get("size", 0) for item in tree.get("tree", []) if item.get("type") == "blob"}
-    return files, lambda path: _get(f"{SETTINGS['raw']}/{owner}/{repo}/{quote(branch)}/{quote(path)}", raw=True)
+    return (files, lambda path: _get(f"{SETTINGS['raw']}/{owner}/{repo}/{quote(branch)}/{quote(path)}", raw=True),
+            {"created_at": meta.get("created_at")})
 
 
 def _pick(files: dict[str, int], kind: str) -> list[str]:
@@ -162,9 +164,10 @@ def get(conn, team_id: str, repo_url: str | None, last_synced: str | None = None
     if not allow_network or (cached and _fresh(cached, repo_url, last_synced)):
         return cached
     try:
-        files, read = (fetcher or github_fetcher)(*match.groups())
+        found = (fetcher or github_fetcher)(*match.groups())
+        files, read, info = found[0], found[1], (found[2] if len(found) > 2 else {})
         scan = {"repo_url": repo_url, "scanned_at": datetime.now(timezone.utc).strftime(TIME_FORMAT),
-                "files": sorted(files), "evidence": evidence(files, read)}
+                "files": sorted(files), "evidence": {**evidence(files, read), "repo_created_at": info.get("created_at")}}
     except (ScanError, KeyError, ValueError):
         return cached
     save(conn, team_id, scan)

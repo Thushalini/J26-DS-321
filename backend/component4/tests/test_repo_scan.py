@@ -90,3 +90,13 @@ def test_no_network_means_cache_only_and_failures_fall_back():
     repo_scan.get(conn, "t1", URL, fetcher=fake_fetcher)
     assert repo_scan.get(conn, "t1", URL, last_synced="2999-01-01T00:00:00Z", fetcher=broken)["evidence"]["test_count"] == 3
     assert repo_scan.get(conn, "t1", "not a github link") is None
+
+
+def test_the_repo_creation_date_is_kept_with_the_scan():
+    conn = _conn()
+
+    def with_details(owner, repo):
+        files, read = fake_fetcher(owner, repo)
+        return files, read, {"created_at": "2026-07-01T09:00:00Z"}
+
+    assert repo_scan.get(conn, "t1", URL, fetcher=with_details)["evidence"]["repo_created_at"] == "2026-07-01T09:00:00Z"

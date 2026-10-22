@@ -13,6 +13,9 @@ from ..m4_readiness.rubric import check, first_match, normalise
 
 SETTINGS = config.PROJECT_HEALTH
 TARGET_NUMBER = re.compile(r"(?<![\w.])(0?\.\d+|1(?:\.0+)?)(?![\w.])|(\d{1,3}(?:\.\d+)?)\s*%")
+NUMBER = r"(0?\.\d+|1(?:\.0+)?|\d{1,3}(?:\.\d+)?\s*%)"
+SCORE_TARGET = re.compile(r"(?:accuracy|f1|f-1|auc|roc|precision|recall|r2|r²|iou|bleu|dice)\b[^.\n]{0,25}?" + NUMBER
+                          + r"|(?:at least|above|over|reach|target of|>=|≥)\s*" + NUMBER)
 
 
 def reproducibility(files: list[str], evidence: dict | None = None) -> float | None:
@@ -33,8 +36,17 @@ def data_quality(runs: list[dict] | None, files: list[str]) -> float | None:
     return round(min(score, 1.0), 3)
 
 
-def target(metric_text: str | None) -> float | None:
-    """The group's target on a 0-1 scale; None when the metric is an error (lower is better)."""
+def _share(token: str) -> float | None:
+    token = token.strip()
+    value = float(token.rstrip("%").strip())
+    if token.endswith("%"):
+        return value / 100 if 0 < value <= 100 else None
+    return value if 0 < value <= 1 else None
+
+
+def target(metric_text: str | None, objective_text: str | None = None) -> float | None:
+    """The group's target on a 0-1 scale: a number in the metric, else a score target in the objective
+    ("85% accuracy", "F1 above 0.8"), else the default. None when the metric is an error (lower is better)."""
     text = (metric_text or "").lower()
     if any(word in text for word in SETTINGS["model_performance"]["lower_is_better"]):
         return None
@@ -43,18 +55,21 @@ def target(metric_text: str | None) -> float | None:
         return float(match.group(1))
     if match and match.group(2) and 0 < float(match.group(2)) <= 100:
         return float(match.group(2)) / 100
-    return SETTINGS["model_performance"]["default_target"]
+    goal = SCORE_TARGET.search((objective_text or "").lower())
+    found = goal and _share(goal.group(1) or goal.group(2))
+    return found or SETTINGS["model_performance"]["default_target"]
 
 
-def model_performance(runs: list[dict] | None, metric_text: str | None) -> float | None:
+def model_performance(runs: list[dict] | None, metric_text: str | None, objective_text: str | None = None) -> float | None:
     fields = SETTINGS["model_performance"]["score_fields"]
     scores = [run[field] for run in runs or [] for field in fields if run.get(field) is not None]
-    goal = target(metric_text)
+    goal = target(metric_text, objective_text)
     if not scores or not goal:
         return None
     return round(min(max(scores) / goal, 1.0), 3)
 
 
-def features(runs: list[dict] | None, files: list[str], metric_text: str | None, evidence: dict | None = None) -> dict:
+def features(runs: list[dict] | None, files: list[str], metric_text: str | None, evidence: dict | None = None,
+             objective_text: str | None = None) -> dict:
     return {"reproducibility": reproducibility(files, evidence), "data_quality": data_quality(runs, files),
-            "model_performance": model_performance(runs, metric_text)}
+            "model_performance": model_performance(runs, metric_text, objective_text)}

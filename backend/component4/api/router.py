@@ -92,7 +92,8 @@ def team_prediction(team_id: str, user=Depends(current_user), conn=Depends(get_c
     readiness = project["readiness"]
     signals = len(FEATURES) - len(project["missing"])
     about = {"team_id": team_id, "signals_from_team": signals, "total_signals": len(FEATURES),
-             "min_signals": config.API["min_team_signals"], "lagging_stages": project["lagging_stages"]}
+             "min_signals": config.API["min_team_signals"], "lagging_stages": project["lagging_stages"],
+             "milestones": project["milestones"], "timeline_basis": project["timeline_basis"]}
 
     if signals < config.API["min_team_signals"]:
         return {**about, "enough_data": False, "source": "live", "model_version": bundle.get("version"),

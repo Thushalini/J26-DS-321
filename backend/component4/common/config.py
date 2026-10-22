@@ -323,9 +323,36 @@ THRESHOLD_TESTS = {
     "recurring_at_least": [1, 2, 3],
 }
 
+COHORT_SCHEDULE = {
+    "name": "SLIIT DS final-year project",
+    "status": "sample",
+    "source": "Student's summary of the SLIIT schedule (2026-10-22): months after the project start (repo creation)",
+    "milestones": [
+        {"name": "TAF submission", "months": 1, "work": "Collect datasets and research papers",
+         "stages": ["data_cleaning"]},
+        {"name": "Project charter submission", "months": 2, "work": "Planning", "stages": []},
+        {"name": "Proposal report submission", "months": 3, "work": "Full structure of the plan and the prototype",
+         "stages": ["data_cleaning", "eda", "documentation"]},
+        {"name": "Progress presentation 1", "months": 4, "work": "Train the model and develop",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development"]},
+        {"name": "Progress presentation 2", "months": 5, "work": "A fully working product",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development",
+                    "model_evaluation", "deployment_mlops"]},
+        {"name": "Final document submission", "months": 7, "work": "Final document",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development",
+                    "model_evaluation", "deployment_mlops"]},
+        {"name": "Final viva", "months": 8, "work": "Final viva",
+         "stages": ["data_cleaning", "eda", "documentation", "feature_engineering", "model_development",
+                    "model_evaluation", "deployment_mlops"]},
+    ],
+}
+
 TIMELINE = {
     "min_items_per_stage": 3,
     "run_stages": ["model_development", "model_evaluation"],
+    "pace_order": ["data_cleaning", "eda", "feature_engineering", "model_development", "model_evaluation", "deployment_mlops"],
+    "deadline_label": "Final deadline",
+    "history_days": 3650,
 }
 
 HISTORY = {
