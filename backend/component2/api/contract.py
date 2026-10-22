@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from component2.config import STAGES
 
-CONTRACT_VERSION = "1.1"        # 1.1 added data_status (1.0 fields are unchanged)
+CONTRACT_VERSION = "1.2"        # 1.1 added data_status, 1.2 drift.parts (1.0 fields are unchanged)
 
 TS_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 SOURCES = {"commit", "notebook_cell", "code_change", "chat"}
@@ -94,6 +94,43 @@ def clean_plan(blueprint):
     return plan
 
 
+MAX_PARTS = 10
+MAX_IGNORE = 30
+PART_SEPARATOR = "::"           # drift_results.dimension of a part's row: "<part name>::<dimension>"
+
+
+def clean_path(path):
+    """'./backend\\component2/' -> 'backend/component2' (repo-relative, forward slashes)."""
+    path = path.strip().replace("\\", "/") if isinstance(path, str) else ""
+    while path.startswith("./"):
+        path = path[2:]
+    return path.strip("/")
+
+
+def clean_blueprint(blueprint):
+    """The whole plan: {"plan": {dimension: value}, "parts": [...], "ignore": [...]}.
+
+    One-model project: only the three decisions, as before (parts and ignore stay empty).
+    Multi-model project (e.g. one model per component): `parts` gives each folder its own plan,
+      [{"name": "C2 stage classifier", "path": "backend/component2",
+        "target": "stage", "algorithm": "logistic regression", "metric": "f1"}, ...]
+    `ignore`: file patterns whose code only LISTS algorithm / metric names (keyword lists, configs,
+    tests), e.g. "backend/component2/drift/mentions.py" or "*/tests/*". Invalid entries are dropped."""
+    blueprint = blueprint if isinstance(blueprint, dict) else {}
+    parts, names = [], set()
+    for p in blueprint.get("parts") or []:
+        if not isinstance(p, dict) or len(parts) == MAX_PARTS:
+            continue
+        name = p.get("name").strip() if isinstance(p.get("name"), str) else ""
+        path = clean_path(p.get("path"))
+        if not name or not path or len(name) > 60 or PART_SEPARATOR in name or name in names:
+            continue
+        names.add(name)
+        parts.append({"name": name, "path": path, "plan": clean_plan(p)})
+    ignore = [clean_path(i) for i in blueprint.get("ignore") or [] if isinstance(i, str) and clean_path(i)]
+    return {"plan": clean_plan(blueprint), "parts": parts, "ignore": ignore[:MAX_IGNORE]}
+
+
 # ---------- Outputs ----------
 
 def data_status(last_activity, missing, now=None):
@@ -147,7 +184,8 @@ def check_summary(payload):
     drift = payload["drift"] or {}
     if drift.get("overall_severity") not in OVERALL_SEVERITIES:
         problems.append(f"drift.overall_severity '{drift.get('overall_severity')}' is not allowed")
-    for d in drift.get("dimensions", []):
+    part_dims = [d for p in drift.get("parts", []) for d in p.get("dimensions", [])]
+    for d in drift.get("dimensions", []) + part_dims:
         if d.get("dimension") not in DIMENSIONS:
             problems.append(f"unknown drift dimension '{d.get('dimension')}'")
         if d.get("severity") not in SEVERITIES:

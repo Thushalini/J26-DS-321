@@ -167,8 +167,11 @@ def label_team(conn, team_id):
 
 
 def blueprint_plan(conn, team_id):
-    bp = one_as_dict(conn.execute("SELECT target, algorithm, metric FROM blueprints WHERE team_id = ?", (team_id,)))
-    return clean_plan(bp)
+    """The team's plan: the three decisions, plus the parts / ignored files of a multi-model project."""
+    bp = one_as_dict(conn.execute("SELECT target, algorithm, metric, parts, ignore_paths FROM blueprints "
+                                  "WHERE team_id = ?", (team_id,))) or {}
+    return {**clean_plan(bp), "parts": json.loads(bp.get("parts") or "[]"),
+            "ignore": json.loads(bp.get("ignore_paths") or "[]")}
 
 
 def analyse_team(conn, team_id, days=30):

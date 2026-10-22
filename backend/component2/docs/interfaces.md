@@ -1,7 +1,7 @@
 # Component 2 — Interface specification
 
 **Component 2: DS Behavioural Modelling & Contribution Analytics** · owner: Thushalini Peranantham
-Contract version **1.1** (`component2/api/contract.py`) · tests: `backend/tests/component2/test_c2_interfaces.py`
+Contract version **1.2** (`component2/api/contract.py`) · tests: `backend/tests/component2/test_c2_interfaces.py`
 
 ```
  INPUTS                                   COMPONENT 2                         OUTPUTS
@@ -62,6 +62,25 @@ C2 needs three decisions. Any of these shapes is accepted (`contract.clean_plan(
 
 From C1, only fields with status `known` or `confirmed` count as the plan.
 
+**Multi-model projects** (e.g. one model per component) add `parts`, and optionally `ignore`
+(`contract.clean_blueprint()`; Blueprint tab → Parts, stored in `blueprints.parts` / `ignore_paths`):
+
+```json
+{"target": null, "algorithm": null, "metric": null,
+ "parts": [{"name": "C2 stage classifier", "path": "backend/component2",
+            "target": "stage", "algorithm": "logistic regression", "metric": "f1"},
+           {"name": "C4 success prediction", "path": "backend/component4",
+            "target": "success", "algorithm": "random forest", "metric": "roc auc"}],
+ "ignore": ["backend/component2/classify/keyword_baseline.py", "backend/component2/drift/mentions.py", "*/tests/*"]}
+```
+
+- Up to 10 parts; a name is unique and has no `::`; `path` is a repo folder (deepest matching folder wins).
+- Code changes and notebook cells go to the part their file is in. A commit goes to the part most of its
+  files are in; a tie, chat, and files outside every part are compared with the project-level plan.
+- `ignore`: a folder, a file, or a pattern (`*` also matches `/`). Use it for code that only *lists*
+  algorithm / metric names. A commit that touched only ignored files is skipped.
+- No `parts` = one plan for the whole repo, exactly as in 1.1.
+
 ## 3. Outputs (produced data and format)
 
 ### O1 `GET /c2/teams/{team_id}/summary?days=30` (the main contract)
@@ -81,7 +100,8 @@ From C1, only fields with status `known` or `confirmed` count as the plan.
     "overall_severity": "moderate",
     "dimensions": [{"dimension": "algorithm", "planned": "random forest", "seen_top": "xgboost",
                     "drift_score": 0.45, "severity": "moderate", "explanation": "...",
-                    "window_end": "2026-10-21T08:12:00Z"}]
+                    "window_end": "2026-10-21T08:12:00Z", "part": null}],
+    "parts": []
   },
   "members": [{"member_id": "M-3f9a2c", "stage_mix": {"eda": 0.6}, "chat": {}, "dominant_role": "eda",
                "role_trend": [{"week": "2026-W42", "dominant": "eda"}]}],
@@ -96,6 +116,8 @@ From C1, only fields with status `known` or `confirmed` count as the plan.
 | `lagging_stages` | stages with < 5 % of recent work (provisional limit, agreed with C4) |
 | `drift.dimensions[].severity` | `none` < 0.20 ≤ `minor` < 0.40 ≤ `moderate` < 0.60 ≤ `significant`; or `no_plan`, `no_evidence` (then `drift_score` is `null`) |
 | `drift.overall_severity` | worst graded severity, or `unknown` if none is graded |
+| `drift.dimensions[].part` | `null` = the project plan; otherwise the part this (worst) result comes from |
+| `drift.parts` | multi-model projects: `[{"part": "<name>", "dimensions": [3 results like above]}]`; `[]` otherwise. The top-level `dimensions` are then the **worst** of the project and its parts, so C3 / C4 still get one result per decision |
 | `data_status.status` | `ok`, `incomplete` (`missing` lists `stage_labels` / `drift` / `roles`), `stale` (no activity for > 14 days) |
 
 `contract.check_summary(payload)` returns `[]` for a valid payload and a list of problems otherwise.
@@ -103,8 +125,9 @@ From C1, only fields with status `known` or `confirmed` count as the plan.
 ### O2 `drift_results` table (read directly by C3)
 
 `team_id, window_end, dimension (target|algorithm|metric), planned, seen_top, drift_score (0–1 or NULL),
-severity, explanation`, primary key `(team_id, window_end, dimension)`. C3 takes the latest window per
-dimension and uses the largest score as its single `drift_severity_score`.
+severity, explanation`, primary key `(team_id, window_end, dimension)`. A part's rows use
+`dimension = "<part name>::<target|algorithm|metric>"`. C3 takes the latest window per dimension and uses
+the largest score as its single `drift_severity_score` (so, for a multi-model project, the worst part).
 
 ### O3 `GET /c2/teams/{id}/roles?window=3d|7d|30d|all`
 
@@ -159,3 +182,5 @@ python -m component3.collector.drift_reader --team <team_id>
 - Renaming / removing a field or changing a value's meaning: bump the major version (→ 2.0) and agree
   with C3 and C4 first.
 - 1.1 (2026-10-21): added `data_status`; summary for a chat-only team is `404` instead of `null`.
+- 1.2 (2026-10-21): multi-model projects: blueprint `parts` / `ignore`, `drift.parts`, `dimensions[].part`.
+  New algorithm names `isolation forest`, `stacking`; `f1_macro` / `f1_weighted` count as F1.

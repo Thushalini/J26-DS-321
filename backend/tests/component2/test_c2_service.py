@@ -84,7 +84,7 @@ def test_drift_keeps_the_latest_window_and_worst_severity(conn):
 def test_drift_without_graded_dimensions_is_unknown(conn):
     save_drift(conn, [drift_row("2026-10-20T00:00:00Z", "target", None, "no_plan")])
     assert service.drift(conn, TEAM)["overall_severity"] == "unknown"
-    assert service.drift(conn, "nobody") == {"overall_severity": "unknown", "dimensions": []}
+    assert service.drift(conn, "nobody") == {"overall_severity": "unknown", "dimensions": [], "parts": []}
 
 
 def test_members_role_history_is_trimmed_and_roster_is_listed(conn):

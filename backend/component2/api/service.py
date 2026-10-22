@@ -8,7 +8,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
-from component2.api.contract import CONTRACT_VERSION, data_status
+from component2.api.contract import CONTRACT_VERSION, PART_SEPARATOR, data_status
 from component2.config import STAGES
 
 LAGGING_SHARE = 0.05          # a stage with < 5% of recent work is "lagging" (agree with C4)
@@ -73,18 +73,40 @@ def daily_stage_counts(conn, team_id, days):
     return [{"date": day, **{s: c[s] for s in STAGES + ["other"]}} for day, c in sorted(per_day.items())]
 
 
+def _worst(rows):
+    """The row with the highest drift score; if none is scored, the first one (no_plan / no_evidence)."""
+    scored = [r for r in rows if r["drift_score"] is not None]
+    return max(scored, key=lambda r: r["drift_score"]) if scored else rows[0]
+
+
 def drift(conn, team_id):
-    """Latest drift result per dimension, plus the worst severity overall."""
+    """Latest drift result per dimension, plus the worst severity overall.
+    Multi-model projects also get `parts` (each part's own three results); the top-level dimensions
+    are then the worst of the project and its parts, so C3 / C4 still read one result per decision."""
     rows = conn.execute("SELECT window_end, dimension, planned, seen_top, drift_score, severity, explanation "
                         "FROM drift_results WHERE team_id = ? ORDER BY window_end", (team_id,)).fetchall()
     latest = {}
     for window_end, dim, planned, seen_top, score, severity, why in rows:
-        latest[dim] = {"dimension": dim, "planned": planned, "seen_top": seen_top,
+        part, _, name = dim.rpartition(PART_SEPARATOR)
+        latest[dim] = {"dimension": name, "part": part or None, "planned": planned, "seen_top": seen_top,
                        "drift_score": score, "severity": severity, "explanation": why,
                        "window_end": window_end}
-    graded = [d["severity"] for d in latest.values() if d["severity"] in SEVERITY_ORDER]
+    # parts deleted from the plan leave old rows behind: only use rows from the newest analysis
+    newest = max((d["window_end"] for d in latest.values()), default=None)
+    current = [d for d in latest.values() if d["window_end"] == newest or d["part"] is None]
+    parts = {}
+    for d in current:
+        if d["part"]:
+            parts.setdefault(d["part"], []).append(d)
+    dimensions = []
+    for name in ("target", "algorithm", "metric"):
+        candidates = [d for d in current if d["dimension"] == name]
+        if candidates:
+            dimensions.append(_worst(sorted(candidates, key=lambda d: d["part"] is not None)))
+    graded = [d["severity"] for d in dimensions if d["severity"] in SEVERITY_ORDER]
     overall = max(graded, key=SEVERITY_ORDER.index) if graded else "unknown"
-    return {"overall_severity": overall, "dimensions": list(latest.values())}
+    return {"overall_severity": overall, "dimensions": dimensions,
+            "parts": [{"part": p, "dimensions": dims} for p, dims in parts.items()]}
 
 
 def members(conn, team_id, roster=()):

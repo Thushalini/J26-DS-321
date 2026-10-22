@@ -9,7 +9,7 @@ import styles from "./c2.module.css";
 import {
   SEVERITY_STYLE, STAGE_LABEL, roleHistoryText, stageBreakdownChart,
 } from "./charts";
-import type { Severity, Summary } from "./types";
+import type { DriftDimension, Severity, Summary } from "./types";
 
 function SeverityBadge({ severity, big = false }: { severity: Severity; big?: boolean }) {
   const s = SEVERITY_STYLE[severity] ?? SEVERITY_STYLE.unknown;
@@ -19,6 +19,27 @@ function SeverityBadge({ severity, big = false }: { severity: Severity; big?: bo
       <span aria-hidden="true">{s.icon}</span>
       {s.label}
     </span>
+  );
+}
+
+function DriftList({ dimensions }: { dimensions: DriftDimension[] }) {
+  return (
+    <ul className={styles.driftList}>
+      {dimensions.map((d) => (
+        <li key={d.dimension} className={styles.driftItem}>
+          <div className={styles.driftHead}>
+            <span className={styles.dimName}>{d.dimension}</span>
+            <SeverityBadge severity={d.severity} />
+          </div>
+          <p className={styles.planLine}>
+            {d.part && <>From <strong>{d.part}</strong> · </>}
+            Planned: <strong>{d.planned ?? "–"}</strong> · Seen most: <strong>{d.seen_top ?? "–"}</strong>
+            {d.drift_score !== null && <> · Drift score: <strong>{d.drift_score.toFixed(2)}</strong></>}
+          </p>
+          <p className={styles.why}>{d.explanation}</p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -35,6 +56,7 @@ export default function Dashboard({ summary, names = {}, simulatedChat = true, v
     () => stageBreakdownChart(summary.stage_breakdown, summary.lagging_stages, mode),
     [summary, mode],
   );
+  const parts = summary.drift.parts ?? [];
 
 
   return (
@@ -45,22 +67,21 @@ export default function Dashboard({ summary, names = {}, simulatedChat = true, v
         <div className={styles.hero}>
           <SeverityBadge severity={summary.drift.overall_severity} big />
         </div>
-        <ul className={styles.driftList}>
-          {summary.drift.dimensions.map((d) => (
-            <li key={d.dimension} className={styles.driftItem}>
-              <div className={styles.driftHead}>
-                <span className={styles.dimName}>{d.dimension}</span>
-                <SeverityBadge severity={d.severity} />
-              </div>
-              <p className={styles.planLine}>
-                Planned: <strong>{d.planned ?? "–"}</strong> · Seen most: <strong>{d.seen_top ?? "–"}</strong>
-                {d.drift_score !== null && <> · Drift score: <strong>{d.drift_score.toFixed(2)}</strong></>}
-              </p>
-              <p className={styles.why}>{d.explanation}</p>
-            </li>
-          ))}
-        </ul>
+        {parts.length > 0 && (
+          <p className={styles.why}>
+            This project has {parts.length} parts, each with its own plan. Below: the worst result per decision.
+          </p>
+        )}
+        <DriftList dimensions={summary.drift.dimensions} />
       </section>
+
+      {parts.map((p) => (
+        <section key={p.part} className={styles.card} aria-label={`Plan drift: ${p.part}`}>
+          <h2 className={styles.cardTitle}>Plan drift · {p.part}</h2>
+          <p className={styles.cardNote}>Work in this part&apos;s folder, compared with this part&apos;s own plan.</p>
+          <DriftList dimensions={p.dimensions} />
+        </section>
+      ))}
 
       <section className={styles.card} aria-labelledby="stage-title">
         <h2 id="stage-title" className={styles.cardTitle}>Where the team&apos;s work went</h2>

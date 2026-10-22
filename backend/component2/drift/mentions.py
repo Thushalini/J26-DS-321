@@ -25,12 +25,14 @@ ALGORITHMS = {
     "lstm": [r"\bLSTM\b"],
     "bert": [r"\bBERT\b", r"roberta", r"distilbert"],
     "kmeans": [r"k-?means", r"KMeans"],
+    "isolation forest": [r"isolation\s*forest", r"IsolationForest"],
+    "stacking": [r"stacking", r"Stacking(?:Classifier|Regressor)"],
     "yolo": [r"\bYOLO\w*"],
 }
 
 METRICS = {
     "accuracy": [r"\baccuracy", r"accuracy_score"],
-    "f1-score": [r"\bf1\b", r"f1[_\- ]?score"],
+    "f1-score": [r"\bf1\b", r"f1[_\- ]?score", r"\bf1_(?:macro|micro|weighted)"],
     "precision": [r"(?<!average[\s_])\bprecision"],     # not "(mean) average precision" = mAP
     "recall": [r"\brecall(?:_score)?\b"],
     "roc auc": [r"\bauc\b", r"\broc\b", r"roc_auc"],

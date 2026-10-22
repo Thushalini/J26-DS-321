@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from component2.api import service
+from component2.api.contract import clean_blueprint, clean_plan
 from component2.classify.keyword_baseline import classify
 from component2.config import BLUEPRINT_DIR
 from component2.db import save_activities, save_labels
@@ -507,11 +508,30 @@ def sync_status(team_id: str, user=Depends(current_user), conn=Depends(get_conn)
 
 # ---------- Blueprint (stand-in until Component 1 provides it) ----------
 
+class BlueprintPart(BaseModel):
+    """One model of a multi-model project: a folder of the repo and its own plan."""
+    name: str = Field(min_length=1, max_length=60)
+    path: str = Field(min_length=1, max_length=200)
+    target: str | None = Field(None, max_length=120)
+    algorithm: str | None = Field(None, max_length=120)
+    metric: str | None = Field(None, max_length=120)
+
+
 class Blueprint(BaseModel):
     target: str | None = Field(None, max_length=120)
     algorithm: str | None = Field(None, max_length=120)
     metric: str | None = Field(None, max_length=120)
     notes: str | None = Field(None, max_length=2000)
+    parts: list[BlueprintPart] | None = Field(None, max_length=10)     # None = keep the saved parts
+    ignore: list[str] | None = Field(None, max_length=30)             # None = keep the saved list
+
+
+def _parts_out(bp):
+    """Saved parts / ignored files in the same flat form the app sends them."""
+    clean = clean_blueprint({"parts": json.loads(bp.get("parts") or "[]"),
+                             "ignore": json.loads(bp.get("ignore_paths") or "[]")})
+    return {"parts": [{"name": p["name"], "path": p["path"], **p["plan"]} for p in clean["parts"]],
+            "ignore": clean["ignore"]}
 
 
 @router.get("/teams/{team_id}/blueprint")
@@ -522,15 +542,16 @@ def get_blueprint(team_id: str, user=Depends(current_user), conn=Depends(get_con
         bp = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         source = "inferred" if bp.get("_inferred_from_early_activity") else ("file" if bp else "none")
         return {"source": source, "editable": False, "notes": None, "updated_at": None, "updated_by": None,
-                **{d: (bp.get(d) or {}).get("name") for d in ("target", "algorithm", "metric")}}
+                **clean_plan(bp), **_parts_out({"parts": json.dumps(bp.get("parts") or []),
+                                                "ignore_paths": json.dumps(bp.get("ignore") or [])})}
     bp = one_as_dict(conn.execute("SELECT b.*, u.name AS updated_by_name FROM blueprints b "
                                   "LEFT JOIN users u ON u.user_id = b.updated_by WHERE b.team_id = ?", (team_id,)))
     base = {"source": "app" if bp else "none", "editable": my_role in ("lead", "member")}
     if not bp:
         return {**base, "target": None, "algorithm": None, "metric": None, "notes": None,
-                "updated_at": None, "updated_by": None}
+                "updated_at": None, "updated_by": None, "parts": [], "ignore": []}
     out = {**base, **{k: bp[k] for k in ("target", "algorithm", "metric", "notes", "updated_at")},
-           "updated_by": bp["updated_by_name"]}
+           "updated_by": bp["updated_by_name"], **_parts_out(bp)}
     if is_anonymised(t, my_role):                       # free-text notes and the editor's name can identify people
         out.update(notes=None, updated_by=None)
     return out
@@ -542,10 +563,16 @@ def put_blueprint(team_id: str, body: Blueprint, user=Depends(current_user), con
     require_live(t, "change the blueprint")
     require(my_role, ("lead", "member"), "change the blueprint")
     vals = [(v or "").strip() or None for v in (body.target, body.algorithm, body.metric, body.notes)]
-    conn.execute("INSERT INTO blueprints VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (team_id) DO UPDATE SET "
+    saved = one_as_dict(conn.execute("SELECT parts, ignore_paths FROM blueprints WHERE team_id = ?", (team_id,))) or {}
+    parts = (json.dumps([p.model_dump() for p in body.parts]) if body.parts is not None
+             else saved.get("parts") or "[]")
+    ignore = json.dumps(body.ignore) if body.ignore is not None else saved.get("ignore_paths") or "[]"
+    conn.execute("INSERT INTO blueprints (team_id, target, algorithm, metric, notes, updated_by, updated_at, "
+                 "parts, ignore_paths) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (team_id) DO UPDATE SET "
                  "target = excluded.target, algorithm = excluded.algorithm, metric = excluded.metric, "
-                 "notes = excluded.notes, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
-                 (team_id, *vals, user["user_id"], now()))
+                 "notes = excluded.notes, updated_by = excluded.updated_by, updated_at = excluded.updated_at, "
+                 "parts = excluded.parts, ignore_paths = excluded.ignore_paths",
+                 (team_id, *vals, user["user_id"], now(), parts, ignore))
     conn.commit()
     if conn.execute("SELECT 1 FROM activities WHERE team_id = ? LIMIT 1", (team_id,)).fetchone():
         sync.analyse_team(conn, team_id)              # drift is re-checked against the new plan straight away

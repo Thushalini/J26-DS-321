@@ -9,6 +9,12 @@ export interface DriftDimension {
   drift_score: number | null;
   severity: Severity;
   explanation: string;
+  part?: string | null;      // multi-model projects: which part this result comes from (null = whole project)
+}
+
+export interface DriftPart {
+  part: string;
+  dimensions: DriftDimension[];
 }
 
 export interface Member {
@@ -25,7 +31,7 @@ export interface Summary {
   window: { start: string; end: string };
   stage_breakdown: Record<string, number>;
   lagging_stages: string[];
-  drift: { overall_severity: Severity; dimensions: DriftDimension[] };
+  drift: { overall_severity: Severity; dimensions: DriftDimension[]; parts?: DriftPart[] };
   members: Member[];
 }
 

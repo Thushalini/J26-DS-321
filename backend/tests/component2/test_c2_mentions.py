@@ -13,6 +13,12 @@ def test_algorithms_and_metrics_found_together():
     assert set(found["metric"]) == {"f1-score", "accuracy"}
 
 
+def test_new_algorithms_and_f1_variants():
+    assert set(find_mentions("IsolationForest(contamination=0.05)")["algorithm"]) == {"isolation forest"}
+    assert set(find_mentions("StackingClassifier(estimators)")["algorithm"]) == {"stacking"}
+    assert set(find_mentions("GridSearchCV(pipe, scoring='f1_macro')")["metric"]) == {"f1-score"}
+
+
 def test_map_metric_is_case_sensitive():
     assert "map" not in find_mentions("df['x'] = df['x'].map(clean)")["metric"]
     assert "map" in find_mentions("mAP50 went up to 0.62")["metric"]

@@ -12,6 +12,12 @@ For each team and each blueprint decision (target / algorithm / metric):
 
 If a team has no blueprint file (public GitHub repos don't), one is INFERRED
 from the first 40% of its timeline: "what they did early on = what they planned".
+
+One model or several: a blueprint can also list PARTS, each a folder with its own plan
+(e.g. one model per component). Every commit, notebook cell and changed code file then goes to
+the part whose folder it is in and is compared with THAT part's plan; chat, and commits spread
+over several parts, are compared with the project's plan. Files listed under `ignore` (code that
+only lists algorithm names, like keyword lists) are skipped. Without parts it works as before.
 A blueprint file that can't be read is NOT replaced: every decision is reported as 'no_plan'
 until someone fixes it (api/contract.py describes what a valid blueprint looks like).
 
@@ -23,8 +29,9 @@ import argparse
 import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
+from fnmatch import fnmatch
 
-from component2.api.contract import clean_plan
+from component2.api.contract import PART_SEPARATOR, clean_blueprint
 from component2.config import BLUEPRINT_DIR
 from component2.db import connect, save_drift
 from component2.drift.mentions import count_mentions, find_mentions, normalise_target
@@ -60,14 +67,15 @@ def texts_of(rows):
 
 
 def load_or_infer_blueprint(team_id, rows):
+    """-> (clean blueprint {"plan", "parts", "ignore"}, source)."""
     path = BLUEPRINT_DIR / f"{team_id}.json"
     if path.exists():
         try:
             bp = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             print(f"WARNING: {path.name} is not valid JSON - drift reported as 'no_plan' until it is fixed")
-            return clean_plan(None), "invalid_file"
-        return clean_plan(bp if isinstance(bp, dict) else None), "file"
+            return clean_blueprint(None), "invalid_file"
+        return clean_blueprint(bp), "file"
 
     early = rows[: max(1, int(len(rows) * EARLY_SHARE))]
     seen = count_mentions(texts_of(early))
@@ -76,7 +84,41 @@ def load_or_infer_blueprint(team_id, rows):
     path.write_text(json.dumps({"team_id": team_id, "_inferred_from_early_activity": True,
                                 **{d: {"name": planned[d]} for d in DIMENSIONS}}, indent=2),
                     encoding="utf-8")
-    return planned, "inferred"
+    return clean_blueprint(planned), "inferred"
+
+
+def is_ignored(path, ignore):
+    return any(path == pattern or path.startswith(pattern + "/") or fnmatch(path, pattern) for pattern in ignore)
+
+
+def part_of(path, parts):
+    """Name of the part whose folder holds this file (the deepest folder wins), or None."""
+    inside = [p for p in parts if path == p["path"] or path.startswith(p["path"] + "/")]
+    return max(inside, key=lambda p: len(p["path"]))["name"] if inside else None
+
+
+def split_by_part(rows, parts, ignore):
+    """rows: (ts, text, source, meta) -> {part name or None (= the project): rows}, ignored files left out.
+    A commit goes to the part most of its (not ignored) files are in; a tie or no files -> the project."""
+    groups = defaultdict(list)
+    for row in rows:
+        _, _, source, meta = row
+        meta = json.loads(meta or "{}")
+        if source == "commit":
+            files = meta.get("files") or []
+            kept = [f for f in files if not is_ignored(f, ignore)]
+            if files and not kept:
+                continue                                  # only touched ignored files
+            votes = Counter(part_of(f, parts) for f in kept).most_common(2)
+            tie = len(votes) == 2 and votes[0][1] == votes[1][1]
+            groups[votes[0][0] if votes and not tie else None].append(row)
+            continue
+        path = meta.get("file") or meta.get("notebook")
+        if path and is_ignored(path, ignore):
+            continue
+        groups[part_of(path, parts) if path else None].append(row)
+    return groups
+
 
 def planned_names(dim, planned):
     """The plan in the same short form as mentions, e.g. 'Random Forest Classifier' -> {'random forest'}."""
@@ -111,25 +153,33 @@ def score_dimension(dim, planned, seen: Counter):
 
 
 def detect_team(conn, team_id, days, planned=None):
-    """planned: {dimension: value} from the app's blueprint (real teams). None = file or inferred (research)."""
+    """planned: the app's blueprint (real teams): {dimension: value}, optionally with "parts" and "ignore".
+    None = blueprint file or inferred (research teams).
+    Returns one result per dimension for the project, plus one per dimension for every part
+    (dimension "<part name>::algorithm", and "part" set to the part's name)."""
     rows = conn.execute("SELECT ts, text, source, meta FROM activities WHERE team_id = ? ORDER BY ts",
                         (team_id,)).fetchall()
     if not rows:
         return []
     if planned is None:
-        planned, bp_source = load_or_infer_blueprint(team_id, rows)
+        blueprint, bp_source = load_or_infer_blueprint(team_id, rows)
     else:
-        bp_source = "app"
+        blueprint, bp_source = clean_blueprint(planned), "app"
     window_end = parse_ts(rows[-1][0])
     window_start = window_end - timedelta(days=days)
-    seen = count_mentions(texts_of([r for r in rows if parse_ts(r[0]) >= window_start]))
+    recent = split_by_part([r for r in rows if parse_ts(r[0]) >= window_start],
+                           blueprint["parts"], blueprint["ignore"])
 
     results = []
-    for dim in DIMENSIONS:
-        score, sev, top, why = score_dimension(dim, planned[dim], seen[dim])
-        results.append({"team_id": team_id, "window_end": rows[-1][0], "dimension": dim,
-                        "planned": planned[dim], "seen_top": top, "drift_score": score,
-                        "severity": sev, "explanation": why, "blueprint": bp_source})
+    plans = [(None, blueprint["plan"])] + [(p["name"], p["plan"]) for p in blueprint["parts"]]
+    for part, plan in plans:
+        seen = count_mentions(texts_of(recent.get(part, [])))
+        for dim in DIMENSIONS:
+            score, sev, top, why = score_dimension(dim, plan[dim], seen[dim])
+            results.append({"team_id": team_id, "window_end": rows[-1][0],
+                            "dimension": f"{part}{PART_SEPARATOR}{dim}" if part else dim, "part": part,
+                            "planned": plan[dim], "seen_top": top, "drift_score": score,
+                            "severity": sev, "explanation": why, "blueprint": bp_source})
     return results
 
 
