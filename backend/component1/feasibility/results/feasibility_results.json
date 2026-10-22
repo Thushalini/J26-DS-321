@@ -1,0 +1,181 @@
+{
+  "data": {
+    "kind": "SIMULATED plans, labelled by a simulated outcome. Not real projects.",
+    "n_total": 10000,
+    "n_train": 8000,
+    "n_test": 2000,
+    "class_counts": {
+      "feasible": 5402,
+      "risky": 2157,
+      "infeasible": 2441
+    },
+    "assumptions": {
+      "cost_hours_per_100k_rows": {
+        "linear": 0.02,
+        "tree": 0.15,
+        "distance": 0.25,
+        "deep": 1.5,
+        "time_series": 0.05,
+        "clustering": 0.08
+      },
+      "cost_scaling_power": {
+        "linear": 1.0,
+        "tree": 1.0,
+        "distance": 1.6,
+        "deep": 1.0,
+        "time_series": 1.0,
+        "clustering": 1.1
+      },
+      "gpu_speedup_deep": 10.0,
+      "tuning_runs": {
+        "linear": 5,
+        "tree": 25,
+        "distance": 12,
+        "deep": 30,
+        "time_series": 12,
+        "clustering": 8
+      },
+      "setup_hours": {
+        "linear": 6,
+        "tree": 8,
+        "distance": 8,
+        "deep": 30,
+        "time_series": 10,
+        "clustering": 6
+      },
+      "min_rows": {
+        "linear": 200,
+        "tree": 500,
+        "distance": 200,
+        "deep": 10000,
+        "time_series": 100,
+        "clustering": 100
+      },
+      "modelling_hours_per_week": 11.2,
+      "infeasible_time_ratio": 1.1,
+      "risky_time_ratio": 0.45,
+      "infeasible_data_ratio": 0.5,
+      "risky_data_ratio": 2.5,
+      "team_skill_sigma": 0.5,
+      "available_time_sigma": 0.3,
+      "data_quality_sigma": 0.3,
+      "label_noise": 0.05,
+      "weeks_range": [
+        1,
+        20
+      ],
+      "rows_log10_range": [
+        2.0,
+        7.0
+      ],
+      "timeline_known_rate": 0.8,
+      "weeks_when_unknown": 12,
+      "gpu_rate": 0.4
+    }
+  },
+  "best_single_feature": {
+    "feature": "log10_rows",
+    "macro_f1": 0.53
+  },
+  "rule_baseline": {
+    "macro_f1": 0.451,
+    "accuracy": 0.578
+  },
+  "logistic_regression": {
+    "macro_f1": 0.517,
+    "accuracy": 0.673
+  },
+  "random_forest": {
+    "macro_f1": 0.799,
+    "accuracy": 0.837,
+    "min_samples_leaf": 5
+  },
+  "ablation_without_time_and_gpu": {
+    "macro_f1": 0.776,
+    "accuracy": 0.817
+  },
+  "random_forest_feature_importance": {
+    "log10_rows": 0.523,
+    "family_deep": 0.179,
+    "weeks_left": 0.122,
+    "family_linear": 0.061,
+    "family_tree": 0.025,
+    "family_distance": 0.021,
+    "has_gpu": 0.015,
+    "family_clustering": 0.013,
+    "family_time_series": 0.011,
+    "task_clustering": 0.01,
+    "timeline_known": 0.006,
+    "task_forecasting": 0.005,
+    "task_regression": 0.004,
+    "task_classification": 0.004
+  },
+  "random_forest_confusion_matrix": {
+    "labels": [
+      "feasible",
+      "risky",
+      "infeasible"
+    ],
+    "rows_are_true_columns_are_predicted": [
+      [
+        1007,
+        58,
+        15
+      ],
+      [
+        119,
+        259,
+        54
+      ],
+      [
+        33,
+        47,
+        408
+      ]
+    ]
+  },
+  "random_forest_per_class_report": {
+    "feasible": {
+      "precision": 0.8688524590163934,
+      "recall": 0.9324074074074075,
+      "f1-score": 0.8995087092451988,
+      "support": 1080.0
+    },
+    "risky": {
+      "precision": 0.7115384615384616,
+      "recall": 0.5995370370370371,
+      "f1-score": 0.6507537688442211,
+      "support": 432.0
+    },
+    "infeasible": {
+      "precision": 0.8553459119496856,
+      "recall": 0.8360655737704918,
+      "f1-score": 0.8455958549222798,
+      "support": 488.0
+    },
+    "accuracy": 0.837,
+    "macro avg": {
+      "precision": 0.8119122775015134,
+      "recall": 0.7893366727383121,
+      "f1-score": 0.7986194443372332,
+      "support": 2000.0
+    },
+    "weighted avg": {
+      "precision": 0.8315770380768833,
+      "recall": 0.837,
+      "f1-score": 0.8326229056637954,
+      "support": 2000.0
+    }
+  },
+  "expert_check": {
+    "n": 40,
+    "random_forest": {
+      "macro_f1": 0.678,
+      "accuracy": 0.725
+    },
+    "rule_baseline": {
+      "macro_f1": 0.474,
+      "accuracy": 0.5
+    }
+  }
+}

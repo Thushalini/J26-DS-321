@@ -16,6 +16,7 @@ from ..common.schema import Event, FieldName, FieldStatus, Provenance, SourceTyp
 from ..timeline.dates import MILESTONE_PREFIX
 from ..timeline.find import standard_timeline_value
 from ..timeline.milestones import record_milestone
+from .size import standard_size
 
 LLMFn = Callable[[str], str]  # takes a prompt, returns the model's reply text
 
@@ -30,6 +31,7 @@ Fields you may use:
 - domain: the area, for example tourism or health
 - objective: what the team wants to achieve
 - dataset: the data they will use
+- dataset_size: how many rows the dataset has, for example "12000 rows"
 - target_variable: what they want to predict
 - task_type: for example classification, regression or forecasting
 - algorithm: the model or method
@@ -109,6 +111,8 @@ def extract_items(message: str, llm: LLMFn) -> list[ExtractedItem]:
             continue
         if item.field == FieldName.TIMELINE:       # "eight weeks" and "8 weeks" must be one value
             item = item.model_copy(update={"value": standard_timeline_value(item.value)})
+        elif item.field == FieldName.DATASET_SIZE:  # "12k rows" and "12,000 records" must be one value
+            item = item.model_copy(update={"value": standard_size(item.value)})
         kept.append(item)
     return kept
 

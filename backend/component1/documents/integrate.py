@@ -13,9 +13,12 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..checks.plan_checks import record_checks
+from ..decisions.domino import settle
+from ..decisions.tracker import record_document_decision
 from ..common.events import EventStore
 from ..common.schema import FieldName, FieldStatus, Provenance, SourceType
-from ..pipeline import judge_field
+from ..pipeline import judge_after_domino, judge_field
 from ..state.features import EXTRACTOR_ACTOR
 from .candidates import Candidate
 
@@ -54,4 +57,11 @@ def accept_candidate(
         text_span=f"Accepted from {candidate.source_label}",
     )
     store.update_field(name, candidate.value, FieldStatus.KNOWN, 0.5, acceptance, EXTRACTOR_ACTOR)
-    return judge_field(store, bundle, candidate.field)
+    result = judge_field(store, bundle, candidate.field)
+    record_checks(store)              # an accepted value can make the plan fit, or stop fitting
+    # The decision record: proposed by the document, agreed by the member, so confirmed.
+    changes = record_document_decision(store, candidate.field, candidate.value, candidate.filename, candidate.page,
+                                       candidate.span, accepted_by, via or f"accept:{candidate.fact_ids[0]}")
+    domino = settle(store, changes)   # Domino validation, if it replaced a settled decision
+    judge_after_domino(store, bundle, domino)
+    return result

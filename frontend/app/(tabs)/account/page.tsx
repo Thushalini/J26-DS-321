@@ -1,17 +1,17 @@
 "use client"
-// My account: change password (other devices get signed out, this one stays signed in).
+// My profile (private): about me, teams, strengths and growth areas, notes (components/my-profile.tsx),
+// then change password (other devices get signed out, this one stays signed in).
 import type React from "react"
 import { useState } from "react"
 
+import { MyProfile } from "@/components/my-profile"
 import { PasswordInput } from "@/components/password-input"
 import { Button, Card, Field, Notice } from "@/components/ui"
-import { api, ROLE_LABEL } from "@/lib/api"
-import { useSession } from "@/lib/session"
+import { api } from "@/lib/api"
 
 const EMPTY = { current: "", password: "", confirm: "" }
 
 export default function AccountPage() {
-  const { user } = useSession()
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState("")
   const [done, setDone] = useState(false)
@@ -44,10 +44,7 @@ export default function AccountPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card title="My account">
-        <p className="text-sm">{user?.name}</p>
-        <p className="text-sm text-muted">{user?.email} · {user && ROLE_LABEL[user.role]}</p>
-      </Card>
+      <MyProfile />
 
       <Card title="Change password" note="You stay signed in here; any other devices are signed out.">
         <form className="flex flex-col gap-3" onSubmit={submit}>

@@ -24,7 +24,7 @@ from .common.schema import FieldName
 from .documents.integrate import DOCUMENT_SPEAKER_PREFIX
 from .pipeline import STATE_ACTOR
 from .state.features import EXTRACTOR_ACTOR
-from .state.normalize import normalize_value
+from .conflicts.same import same_value
 
 ACCEPTED_PREFIX = "Accepted from "
 
@@ -117,7 +117,7 @@ def field_history(events: Iterable[Any], field: Optional[str] = None, include_ev
             kind = "accepted_document"
         elif now["value"] is None:
             kind = "proposed"
-        elif normalize_value(new_value or "") != normalize_value(now["value"] or ""):
+        elif not same_value(f, new_value, now["value"]):
             kind = "changed"
         elif speaker == now["speaker"]:
             kind = "repeated"

@@ -22,7 +22,7 @@ export function AppHeader() {
         <div className="flex items-center gap-3 text-xs">
           <Link href="/guide" className="text-primary">Guide</Link>
           {staff && <Link href="/feedback" className="text-primary">Feedback</Link>}
-          <Link href="/account" className="text-primary">Change password</Link>
+          <Link href="/account" className="text-primary">My profile</Link>
           <button
             type="button"
             className="text-muted hover:text-foreground"
