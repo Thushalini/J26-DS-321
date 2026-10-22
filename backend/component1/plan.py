@@ -16,7 +16,11 @@ from .common.events import EventStore
 from .common.schema import FieldName, FieldStatus
 from .documents.candidates import Candidate, group_candidates
 from .gaps.gaps import check_completeness, ready_gaps
+from .active.sensitivity import feasibility_dependencies
+from .agent.signals import CLARIFY, CONFIRM, GAP
+from .pipeline import next_questions
 from .checks.plan_checks import model_judgement, run_checks
+from .feasibility.predict import default_bundle as feasibility_bundle
 from .decisions.view import decisions_view
 from .extraction.size import rows_of
 from .history import recent_changes
@@ -30,6 +34,22 @@ MAX_SUGGESTIONS_PER_FIELD = 3
 RECENT_CHANGES = 10
 
 NOTE = "Confidence is the system's own estimate (High, Medium or Low). It is not a guarantee of being right."
+
+
+NEXT_QUESTIONS = 3
+QUESTION_WORD = {GAP: "decide", CONFIRM: "confirm", CLARIFY: "add detail"}
+
+
+def question_dict(q) -> dict[str, Any]:
+    """One "What to settle next" line: what to do, about which field, and why."""
+    reasons = [r for r in q.detail.split("; ") if r]
+    if q.kind == CONFIRM:
+        why = "it may still change: " + " and ".join(reasons) if reasons else "it may still change"
+    else:
+        why = q.detail
+    return {"kind": q.kind, "action": QUESTION_WORD.get(q.kind, q.kind), "field": q.field,
+            "label": label(FieldName(q.field)), "value": q.values[0] if q.values else None,
+            "why": why, "priority": q.priority}
 
 
 def label(name: FieldName) -> str:
@@ -56,6 +76,8 @@ def plan_from_events(
     store = EventStore.from_events(team_id, events)
     state = store.state
     report = check_completeness(state)
+    questions = next_questions(store)
+    asked = {(q.kind, q.field): q for q in questions}
 
     fields = []
     for name in FieldName:
@@ -88,6 +110,10 @@ def plan_from_events(
             item["timeline"] = resolve(f.value, said_on=first_said(store.events, f.value))
         if name == FieldName.DATASET_SIZE:
             item["rows"] = rows_of(f.value)
+        if (q := asked.get((CONFIRM, name.value))) is not None:      # likely to be disputed or changed soon
+            item["at_risk"] = [r for r in q.detail.split("; ") if r]
+        if (q := asked.get((CLARIFY, name.value))) is not None:      # too vague to build on
+            item["needs_detail"] = q.detail
         if suggestions is not None:
             item["suggestions"] = [c.as_dict(include_evidence)
                                    for c in suggestions.get(name.value, [])[:MAX_SUGGESTIONS_PER_FIELD]]
@@ -108,6 +134,7 @@ def plan_from_events(
             "low_confidence": [n.value for n in report.low_confidence],
         },
         "next_gaps": [n.value for n in ready_gaps(state)[:3]],
+        "next_questions": [question_dict(q) for q in questions[:NEXT_QUESTIONS]],
         "fields": fields,
         "evidence_included": include_evidence,
         "recent_changes": recent_changes(events, RECENT_CHANGES, include_evidence, hide_documents),
@@ -115,6 +142,7 @@ def plan_from_events(
         "decisions": decisions_view(state, store.events, include_evidence, hide_documents),
         "checks": [r.as_dict() for r in run_checks(state, store.events)],
         "feasibility_model": model_judgement(state, store.events),
+        "feasibility_depends_on": feasibility_dependencies(feasibility_bundle(), state, store.events),
         "feasibility": state.feasibility,
         "documents": documents,
         "note": NOTE,

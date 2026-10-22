@@ -5,7 +5,7 @@
 
 import type React from "react"
 
-type Tone = "saved" | "conflict" | "check" | "found" | "question" | "plain"
+type Tone = "saved" | "conflict" | "check" | "found" | "question" | "confirm" | "clarify" | "plain"
 
 const LOOK: Record<Tone, { label: string; cls: string; chip: string }> = {
   saved: { label: "Saved", cls: "", chip: "bg-status-good/15 text-status-good" },
@@ -13,6 +13,8 @@ const LOOK: Record<Tone, { label: string; cls: string; chip: string }> = {
   check: { label: "Check", cls: "border-status-warning bg-status-warning/10", chip: "bg-status-warning/25 text-foreground" },
   found: { label: "From your documents", cls: "border-primary/40 bg-primary/5", chip: "bg-primary/15 text-primary" },
   question: { label: "Question", cls: "border-primary/40 bg-surface", chip: "bg-primary/15 text-primary" },
+  confirm: { label: "Please confirm", cls: "border-status-warning bg-status-warning/10", chip: "bg-status-warning/25 text-foreground" },
+  clarify: { label: "Needs detail", cls: "border-primary/40 bg-primary/5", chip: "bg-primary/15 text-primary" },
   plain: { label: "", cls: "", chip: "" },
 }
 
@@ -101,7 +103,28 @@ function Line({ line }: { line: string }) {
       </Block>
     )
   }
+  m = line.match(/^Can someone confirm the (.+?): (.*?)\? I ask because (.*)\.$/)
+  if (m) {
+    return (
+      <Block tone="confirm" title={m[1]}>
+        <p><span className="font-semibold">{m[2]}</span>: can someone confirm it?</p>
+        <p className="mt-1 text-xs text-muted">Why I ask: {m[3]}.</p>
+      </Block>
+    )
+  }
+  if (line.startsWith("A detail is missing: ")) {
+    return <Block tone="clarify"><p>{line.slice("A detail is missing: ".length)}</p></Block>
+  }
   if (line.startsWith("I noticed ")) {
+    const cut = line.indexOf(" It matters because ")
+    if (cut >= 0) {
+      return (
+        <Block tone="question">
+          <p>{line.slice(0, cut)}</p>
+          <p className="mt-1 text-xs text-muted">Why it matters: {line.slice(cut + " It matters because ".length)}</p>
+        </Block>
+      )
+    }
     return <Block tone="question"><p>{line}</p></Block>
   }
   return <p className="text-sm">{line}</p>

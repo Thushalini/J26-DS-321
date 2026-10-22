@@ -16,6 +16,7 @@ import {
   type PlanField,
   type PlanCheck,
   type PlanDecision,
+  type PlanFeasibilityDependency,
   type PlanFeasibilityModel,
   type PlanHistoryEntry,
   type PlanMilestone,
@@ -144,18 +145,39 @@ const VERDICT: Record<string, { word: string; cls: string; bar: string }> = {
   infeasible: { word: "Infeasible", cls: "border-status-critical text-status-critical bg-status-critical/10", bar: "bg-status-critical" },
 }
 
-function FeasibilityCard({ f }: { f: PlanFeasibilityModel | null | undefined }) {
+function DependsOn({ deps }: { deps: PlanFeasibilityDependency[] }) {
+  if (deps.length === 0) return null
+  return (
+    <div className="rounded-bar border border-status-warning bg-status-warning/10 px-2 py-1.5">
+      <p className="text-xs font-semibold">It depends on something not settled yet</p>
+      <ul className="mt-1 flex flex-col gap-1 text-xs">
+        {deps.map((d) => (
+          <li key={d.field}>
+            {d.text.replace(/^whether the plan is feasible depends on /, "")
+              .replace(/^./, (c) => c.toUpperCase())}.{" "}
+            <span className="text-muted">{d.known === "unsure" ? "It was said unsurely; please confirm it." : "Nobody has said it yet."}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function FeasibilityCard({ f, deps = [] }: { f: PlanFeasibilityModel | null | undefined; deps?: PlanFeasibilityDependency[] }) {
   return (
     <Card
       title="Can the team finish this plan?"
       note="A trained model judges the plan from the task, algorithm, dataset size, GPU and time left. It learned from simulated project outcomes, so treat it as a second opinion, not a verdict."
     >
-      {!f ? (
+      {!f && deps.length > 0 ? (
+        <DependsOn deps={deps} />
+      ) : !f ? (
         <p className="text-sm text-muted">
           Not judged yet. Buddy needs the algorithm and the dataset size (for example &ldquo;about 10k rows&rdquo;).
         </p>
       ) : (
         <div className="flex flex-col gap-2">
+          <DependsOn deps={deps} />
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full border px-2 py-0.5 text-sm font-semibold ${(VERDICT[f.label] ?? VERDICT.risky).cls}`}>
               {(VERDICT[f.label] ?? VERDICT.risky).word}
@@ -452,6 +474,23 @@ function FieldCard({ f, teamId, version, milestones, showSources, canEdit, busy,
         </p>
       )}
 
+      {(f.at_risk || f.needs_detail) && (
+        <div className="mt-1.5 flex flex-col gap-1">
+          {f.at_risk && (
+            <p className="text-xs">
+              <span className="mr-1 rounded-full bg-status-warning/25 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide">May change</span>
+              <span className="text-muted">{f.at_risk.length ? f.at_risk.join("; ") : "it may still change"}</span>
+            </p>
+          )}
+          {f.needs_detail && (
+            <p className="text-xs">
+              <span className="mr-1 rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-primary">Needs detail</span>
+              <span className="text-muted">{f.needs_detail}</span>
+            </p>
+          )}
+        </div>
+      )}
+
       {f.name === "timeline" && <TimelineDetails t={f.timeline} milestones={milestones} />}
 
       {f.suggestions && f.suggestions.length > 0 && (
@@ -677,7 +716,27 @@ export function BlueprintPlan({ teamId }: { teamId: string }) {
                            tone="neutral" onClick={() => setSection("fields")} />
             )}
           </div>
-          {plan.next_gaps.length > 0 && (
+          {plan.next_questions && plan.next_questions.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold">What to settle next</p>
+              <ol className="mt-1 flex flex-col gap-1">
+                {plan.next_questions.map((q, i) => (
+                  <li key={`${q.kind}-${q.field}`} className="flex gap-2 text-xs">
+                    <span aria-hidden className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-primary text-[0.65rem] font-semibold text-primary-foreground">
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="font-semibold">
+                        {q.action.charAt(0).toUpperCase() + q.action.slice(1)} the {q.label.toLowerCase()}
+                      </span>
+                      {q.value ? <span className="text-muted"> ({q.value})</span> : null}
+                      <span className="block text-muted">{q.why.charAt(0).toUpperCase() + q.why.slice(1)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : plan.next_gaps.length > 0 && (
             <p className="text-xs text-muted">
               Buddy will ask about next: {plan.next_gaps.join(", ").replaceAll("_", " ")}.
             </p>
@@ -727,7 +786,7 @@ export function BlueprintPlan({ teamId }: { teamId: string }) {
 
         {shown === "checks" && (
           <>
-            {"feasibility_model" in plan && <FeasibilityCard f={plan.feasibility_model} />}
+            {"feasibility_model" in plan && <FeasibilityCard f={plan.feasibility_model} deps={plan.feasibility_depends_on} />}
             {plan.checks && <PlanChecks checks={plan.checks} />}
           </>
         )}

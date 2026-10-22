@@ -263,3 +263,110 @@ def test_an_asked_team_reports_its_outcome():
                   outcome=out, snapshots=False)
     assert {"rework", "changes", "asked", "completed_at", "steps", "vague_left"} <= set(out)
     assert out["asked"] > 0
+
+
+# ------------------------------------------------------------ sensitivity
+from component1.active.sensitivity import _describe, feasibility_dependencies  # noqa: E402
+from component1.agent.policy import gap_text  # noqa: E402
+
+
+class FakeFeasibility:
+    """A pretend feasibility model: feasible with 5,000+ rows, infeasible below; a GPU does not matter."""
+    classes_ = ["feasible", "infeasible", "risky"]
+
+
+@pytest.fixture
+def feasibility(monkeypatch):
+    import component1.active.sensitivity as sens
+
+    def judge(bundle, task, algorithm, rows, has_gpu=False, weeks_left=None):
+        label = "feasible" if rows >= 5000 else "infeasible"
+        return {"label": label, "probabilities": {"feasible": 0.9 if label == "feasible" else 0.1}}
+    monkeypatch.setattr(sens, "judge", judge)
+    return FakeFeasibility()
+
+
+def plan_store(**values):
+    s = EventStore("t")
+    for f, (v, hedged) in values.items():
+        mention(s, f, v, "M-1", hedged=hedged)
+        propose(s, f, v, "M-1", f)
+    return s
+
+
+def test_a_missing_size_that_flips_the_verdict_is_named(feasibility):
+    s = plan_store(task_type=("regression", False), algorithm=("XGBoost", False))
+    deps = feasibility_dependencies(feasibility, s.state, s.events)
+    assert [d["field"] for d in deps] == ["dataset_size"] and deps[0]["known"] == "missing"
+    assert deps[0]["text"] == ("whether the plan is feasible depends on the dataset size: it looks infeasible "
+                               "with about 500 rows and feasible with about 5,000 or more")
+
+
+def test_a_clearly_stated_size_is_not_second_guessed(feasibility):
+    s = plan_store(task_type=("regression", False), algorithm=("XGBoost", False), dataset_size=("500 rows", False))
+    assert feasibility_dependencies(feasibility, s.state, s.events) == []
+
+
+def test_an_unsure_size_is_tried_too(feasibility):
+    s = plan_store(task_type=("regression", False), algorithm=("XGBoost", False), dataset_size=("500 rows", True))
+    assert [d["known"] for d in feasibility_dependencies(feasibility, s.state, s.events)] == ["unsure"]
+
+
+def test_nothing_without_an_algorithm_or_a_model(feasibility):
+    s = plan_store(task_type=("regression", False))
+    assert feasibility_dependencies(feasibility, s.state, s.events) == []
+    assert feasibility_dependencies(None, s.state, s.events) == []
+
+
+def test_the_gap_question_says_why_it_matters(feasibility):
+    s = plan_store(problem=("forecasting hotel demand", False), dataset=("Kaggle hotel bookings", False),
+                   task_type=("regression", False), algorithm=("XGBoost", False))
+    qs = question_signals(s.state, s.events, None, feasibility_bundle=feasibility)
+    size = next(q for q in qs if q.field == "dataset_size")
+    plain = next(q for q in question_signals(s.state, s.events, None) if q.field == "dataset_size")
+    assert size.priority == pytest.approx(plain.priority * 1.5)
+    assert gap_text(size).endswith("It matters because whether the plan is feasible depends on the dataset size: "
+                                   "it looks infeasible with about 500 rows and feasible with about 5,000 or more.")
+    assert "It matters" not in gap_text(plain)
+
+
+def test_an_unsure_decisive_value_gets_a_confirm_question(feasibility):
+    s = plan_store(task_type=("regression", False), algorithm=("XGBoost", False), dataset_size=("500 rows", True))
+    qs = question_signals(s.state, s.events, risky(0.05), feasibility_bundle=feasibility)
+    c = next(q for q in qs if q.kind == CONFIRM and q.field == "dataset_size")
+    assert c.detail.startswith("whether the plan is feasible depends on it")
+
+
+def test_values_with_the_same_verdict_are_said_once():
+    s = lambda *xs: [{"value": v, "label": l} for v, l in xs]
+    assert _describe("rows", s((500, "infeasible"), (1000, "infeasible"), (5000, "feasible"))) == \
+        "infeasible with about 500 to 1,000 rows and feasible with about 5,000"
+    assert _describe("weeks_left", s((2, "risky"), (6, "feasible"), (12, "feasible"))) == \
+        "risky with 2 weeks left and feasible with 6 or more"
+    assert _describe("has_gpu", s((False, "infeasible"), (True, "risky"))) == "infeasible without a GPU but risky with one"
+
+
+# ------------------------------------------------------------- the screen
+from component1.plan import plan_from_events  # noqa: E402
+
+
+def test_the_plan_lists_what_to_settle_next_and_tags_fields(monkeypatch):
+    import component1.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "risk_bundle", lambda: risky(0.5))
+    monkeypatch.setattr(pipeline, "feasibility_bundle", lambda: None)
+    s = plan_store(problem=("forecasting hotel demand", False), target_variable=("hotel demand", True),
+                   algorithm=("Neural Network", False))
+    p = plan_from_events("t", list(s.events))
+    nq = p["next_questions"]
+    assert 0 < len(nq) <= 3 and [q["priority"] for q in nq] == sorted((q["priority"] for q in nq), reverse=True)
+    assert {"kind", "action", "field", "label", "value", "why", "priority"} <= set(nq[0])
+    fields = {f["name"]: f for f in p["fields"]}
+    assert fields["algorithm"]["needs_detail"].startswith("The algorithm is 'Neural Network'")
+    assert "at_risk" in fields["target_variable"] and "at_risk" not in fields["algorithm"]     # vague: clarify instead
+
+
+def test_with_the_switch_off_the_plan_has_no_next_questions(monkeypatch):
+    monkeypatch.setenv("C1_ACTIVE", "off")
+    s = plan_store(algorithm=("Neural Network", False))
+    p = plan_from_events("t", list(s.events))
+    assert p["next_questions"] == [] and not any("needs_detail" in f for f in p["fields"])

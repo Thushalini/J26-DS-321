@@ -19,6 +19,7 @@ from typing import Any, Mapping, Optional
 
 from .active.priority import enabled as active_enabled, question_signals
 from .active.risk import default_bundle as risk_bundle
+from .feasibility.predict import default_bundle as feasibility_bundle
 from .agent.signals import CHECK, CONFLICT, FOUND, GAP, SAVED, Signal
 from .checks.plan_checks import check_signals, record_checks, run_checks
 from .decisions.tracker import resolved_by_decision, turned_down
@@ -84,16 +85,32 @@ def state_signals(store: EventStore, candidates: Optional[Mapping[str, Any]] = N
             c = candidates[name.value]
             signals.append(Signal(FOUND, name.value, (c.value,), source=c.source_label))
     if active_enabled():
-        # Gap, confirm and clarify questions, scored by priority (active/priority.py). Fields Buddy is
-        # already warning about (a plan check or a Domino re-check) get no second question.
-        t = current_timeline(state, store.events)
-        days_left = t.get("days_left") if t else None
-        warned = set(pending) | {s.field for s in checks}
-        signals.extend(question_signals(state, store.events, risk_bundle(), days_left, skip=warned))
+        signals.extend(_questions(store, state, warned=set(pending) | {s.field for s in checks}))
     else:
         for name in ready_gaps(state):
             signals.append(Signal(GAP, name.value))
     return signals
+
+
+def _questions(store: EventStore, state, warned: set) -> list[Signal]:
+    """Gap, confirm and clarify questions, scored by priority (active/priority.py). Fields Buddy is
+    already warning about (a plan check or a Domino re-check) get no second question."""
+    t = current_timeline(state, store.events)
+    days_left = t.get("days_left") if t else None
+    return question_signals(state, store.events, risk_bundle(), days_left, skip=warned,
+                            feasibility_bundle=feasibility_bundle())
+
+
+def next_questions(store: EventStore) -> list[Signal]:
+    """The questions Buddy would ask next, best first (for the Blueprint's "What to settle next").
+    Empty when C1_ACTIVE is off."""
+    if not active_enabled():
+        return []
+    state = store.state
+    pending = {d.field.value for d in state.decisions.values()
+               if d.status == DecisionStatus.PENDING_FIX and not d.decision_id.startswith("ms:")}
+    checks = {s.field for s in check_signals(run_checks(state, store.events))}
+    return _questions(store, state, warned=pending | checks)
 
 
 def judge_field(store: EventStore, bundle: dict, field: str) -> tuple[str, float]:

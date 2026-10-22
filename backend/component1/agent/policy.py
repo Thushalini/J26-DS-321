@@ -19,6 +19,8 @@ from typing import Optional
 
 from .signals import CHECK, CLARIFY, CONFIRM, CONFLICT, FINALIZED, FOUND, GAP, SAVED, Signal
 
+FEASIBILITY_PREFIX = "whether the plan is feasible depends on"   # active/sensitivity.py starts its sentences so
+
 
 @dataclass(frozen=True)
 class BuddyConfig:
@@ -71,6 +73,13 @@ def found_text(signal: Signal) -> str:
 
 
 def gap_text(signal: Signal) -> str:
+    text = _gap_question(signal)
+    if signal.detail.startswith(FEASIBILITY_PREFIX):          # the answer decides whether the plan can work
+        text += f" It matters because {signal.detail}."
+    return text
+
+
+def _gap_question(signal: Signal) -> str:
     if signal.field == "dataset_size":
         return "I noticed nobody has said how big the dataset is. Roughly how many rows does it have?"
     if signal.field == "timeline":

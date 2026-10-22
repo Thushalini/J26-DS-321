@@ -210,6 +210,19 @@ export interface PlanField {
   evidence?: PlanEvidence[]
   suggestions?: PlanSuggestion[]
   timeline?: PlanTimeline | null     // only on the "timeline" field
+  at_risk?: string[]                 // likely to be disputed or changed soon: the reasons (conflict-risk model)
+  needs_detail?: string              // too vague to build on: the question that would make it specific
+}
+
+/** One line of "What to settle next": the question Buddy would ask, and why (active/priority.py). */
+export interface PlanNextQuestion {
+  kind: "gap" | "confirm" | "clarify" | string
+  action: string                     // "decide", "confirm" or "add detail"
+  field: string
+  label: string
+  value: string | null
+  why: string
+  priority: number
 }
 
 /** The timeline field's value worked out into dates. */
@@ -241,6 +254,15 @@ export interface PlanFeasibilityModel {
   reasons: { text: string; effect: "raises risk" | "lowers risk" | string; weight: number }[]
   alternatives: { change: string; label: string; feasible_probability: number }[]
   note: string
+}
+
+/** A missing or unsure fact that changes the feasibility verdict (active/sensitivity.py). */
+export interface PlanFeasibilityDependency {
+  field: string
+  fact: string                       // e.g. "the dataset size"
+  known: "missing" | "unsure" | string
+  scenarios: { value: number | boolean; label: string; feasible_probability: number }[]
+  text: string                       // "whether the plan is feasible depends on the dataset size: it looks ..."
 }
 
 /** One planning decision: what, who proposed it, why, who agreed or objected, and its status. */
@@ -283,6 +305,7 @@ export interface PlanData {
   decisions?: { current: PlanDecision[]; all: PlanDecision[]; needs_recheck: PlanDecision[] }
   checks?: PlanCheck[]
   feasibility_model?: PlanFeasibilityModel | null
+  feasibility_depends_on?: PlanFeasibilityDependency[]
   feasibility?: Record<string, string> | null
   team_id: string
   version: number
@@ -297,6 +320,7 @@ export interface PlanData {
     low_confidence: string[]
   }
   next_gaps: string[]
+  next_questions?: PlanNextQuestion[]
   fields: PlanField[]
   note: string
 }
