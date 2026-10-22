@@ -66,10 +66,14 @@ def check_text(signal: Signal) -> str:
 def found_text(signal: Signal) -> str:
     value = signal.values[0] if signal.values else ""
     where = signal.source or "the uploaded documents"
-    return f"I found a possible {field_label(signal.field)} in {where}: {value}. Should we use that?"
+    return (f"I found a possible {field_label(signal.field)} in {where}: {value}. Should we use that? "
+            f"(You can also accept or dismiss it on the Blueprint tab.)")
 
 
 def gap_text(signal: Signal) -> str:
+    if signal.field == "timeline":
+        return ("I noticed there is no decision yet on the timeline. When is the deadline, "
+                "or how many weeks does the team have?")
     return f"I noticed there is no decision yet on the {field_label(signal.field)}. Could someone confirm what it will be?"
 
 
@@ -79,6 +83,15 @@ class Buddy:
         self._said: dict[tuple, float] = {}
         self._last_question_at: Optional[float] = None
         self._last_human_message_at: Optional[float] = None
+        self.last_step_keys: list[tuple] = []     # what the last step() said, so it can be saved
+        self.last_step_asked: bool = False        # True if the last step() asked a question or gave a warning
+
+    def restore(self, keys, at: float, asked: bool) -> None:
+        """Remember something said before a restart, so Buddy does not repeat it."""
+        for key in keys:
+            self._said[tuple(key)] = at
+        if asked:
+            self._last_question_at = at
 
     def heard_message(self, now: float) -> None:
         self._last_human_message_at = now
@@ -89,15 +102,20 @@ class Buddy:
         question = self._pick_question(signals, now)
 
         parts = []
+        keys: list[tuple] = []
         if saved:
             for s in saved:
                 self._said[s.key] = now
+                keys.append(s.key)
             parts.append(saved_line(saved))
         if question is not None:
             signal, text = question
             self._said[signal.key] = now
             self._last_question_at = now
+            keys.append(signal.key)
             parts.append(text)
+        self.last_step_keys = keys
+        self.last_step_asked = question is not None
         return ["\n".join(parts)] if parts else []
 
     # ------------------------------------------------------------ helpers

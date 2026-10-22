@@ -22,7 +22,7 @@ def test_on_an_empty_blueprint_only_the_problem_is_ready_to_ask():
 def test_once_the_problem_is_known_its_dependants_unlock_by_weight():
     store = EventStore("p1")
     put(store, FieldName.PROBLEM, FieldStatus.KNOWN)
-    assert ready_gaps(store.state) == [FieldName.OBJECTIVE, FieldName.DATASET, FieldName.DOMAIN]
+    assert ready_gaps(store.state) == [FieldName.OBJECTIVE, FieldName.DATASET, FieldName.DOMAIN, FieldName.TIMELINE]
 
 
 def test_an_uncertain_field_does_not_unlock_the_next_ones():

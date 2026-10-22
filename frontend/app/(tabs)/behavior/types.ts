@@ -45,6 +45,7 @@ export interface WindowMember {
   chat_mix: Record<string, number>;
   main_roles: string[];
   evidence: "none" | "low" | "ok";
+  last_active: string | null;        // latest commit / notebook edit / chat message, any time
 }
 
 export interface WindowRoles {

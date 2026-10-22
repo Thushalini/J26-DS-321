@@ -2,6 +2,7 @@
 import type React from "react"
 // Team chat. Real teams: members' messages become Component 2 activities (half weight in roles,
 // replies feed responsiveness / social impact). Research teams: the simulated chat, read-only.
+// Buddy (Component 1) messages arrive in the same list with sender_type "assistant".
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { Button, Notice, Pill, inputClass } from "@/components/ui"
@@ -17,6 +18,7 @@ interface Message {
   reply_to: string | null
   mine: boolean
   team_role: string | null
+  sender_type?: "member" | "assistant"
 }
 
 interface Chat {
@@ -104,25 +106,35 @@ export default function ChatPage() {
         {chat?.simulated && <Pill tone="research">Simulated chat</Pill>}
       </div>
       {!team.is_research && (
-        <p className="text-xs text-muted">Your messages are analysed for lifecycle stage and team interaction (shown on the Behavior tab).</p>
+        <p className="text-xs text-muted">Your messages are analysed for lifecycle stage and team interaction (shown on the Behavior tab). Buddy listens too and keeps the planning blueprint up to date.</p>
       )}
       {error && <Notice tone="error">{error}</Notice>}
-      {!chat && !error && <p className="text-sm text-muted">Loading…</p>}
+      {!chat && !error && <p className="text-sm text-muted">Loading...</p>}
       {chat && chat.messages.length === 0 && <Notice>No messages yet. Say hello and post your first update.</Notice>}
 
       <ul className="flex flex-col gap-2">
         {chat?.messages.map((m) => {
+          const isBuddy = m.sender_type === "assistant"
           const parent = m.reply_to ? byId.get(m.reply_to) : undefined
+          const bubble = isBuddy
+            ? "border-border border-l-4 border-l-primary bg-primary/5"
+            : m.mine
+              ? "border-primary/30 bg-primary/10"
+              : "border-border bg-surface"
           return (
-            <li key={m.msg_id} className={`flex ${m.mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] rounded-card border px-3 py-2 ${m.mine ? "border-primary/30 bg-primary/10" : "border-border bg-surface"}`}>
+            <li key={m.msg_id} className={`flex ${m.mine && !isBuddy ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] rounded-card border px-3 py-2 ${bubble}`}>
                 <p className="text-xs text-muted">
-                  <span className={chat.simulated ? "font-mono" : "font-semibold text-foreground"}>{m.mine ? "You" : m.sender}</span>
+                  {isBuddy ? (
+                    <span className="mr-1 rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">Buddy</span>
+                  ) : (
+                    <span className={chat.simulated ? "font-mono" : "font-semibold text-foreground"}>{m.mine ? "You" : m.sender}</span>
+                  )}
                   {m.team_role === "supervisor" && " · supervisor"} · {shortDate(m.ts)}
                 </p>
                 {parent && <p className="mt-1 border-l-2 border-border pl-2 text-xs text-muted">↪ {parent.text.slice(0, 80)}</p>}
                 <p className="mt-1 whitespace-pre-wrap text-sm">{m.text}</p>
-                {!chat.read_only && (
+                {!chat.read_only && !isBuddy && (
                   <button type="button" className="mt-1 text-xs text-primary" onClick={() => setReplyTo(m)}>Reply</button>
                 )}
               </div>
@@ -141,7 +153,7 @@ export default function ChatPage() {
             </p>
           )}
           <div className="flex gap-2">
-            <input className={inputClass} placeholder="Post an update…" value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} aria-label="Message" />
+            <input className={inputClass} placeholder="Post an update..." value={text} onChange={(e) => setText(e.target.value)} maxLength={2000} aria-label="Message" />
             <Button type="submit" disabled={sending || !text.trim()}>Send</Button>
           </div>
         </form>

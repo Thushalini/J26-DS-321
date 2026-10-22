@@ -15,6 +15,7 @@
   GET  /app/teams/{id}                   team details, members, unlinked git authors
   PUT  /app/teams/{id}                   rename / change repo link (lead, supervisor)
   PUT  /app/teams/{id}/me                my git names / emails (to link my commits)
+  POST /app/teams/{id}/link              lead / supervisor: credit an unlinked git author to a member
   POST /app/teams/{id}/sync  GET .../sync   run / watch the live Component 2 pipeline
   GET|PUT /app/teams/{id}/blueprint      planned target / algorithm / metric (stand-in for Component 1)
   GET|POST /app/teams/{id}/chat          team chat: lead + members only (research teams: the simulated chat, read-only)
@@ -36,6 +37,16 @@ from component2.api import service
 from component2.classify.keyword_baseline import classify
 from component2.config import BLUEPRINT_DIR
 from component2.db import save_activities, save_labels
+try:
+    from component1.hook import merge_chat, run_in_background
+except Exception as e:                      # Component 1 must never stop the app from starting
+    print(f"[component1] not loaded: {e}")
+
+    def run_in_background(*args, **kwargs):
+        pass
+
+    def merge_chat(conn, team_id, messages, limit=200):
+        return messages
 
 from buddy import codes, sync
 from buddy.access import (PANEL_ROLE, anonymous_team_name, is_anonymised, membership, require, require_live,
@@ -217,6 +228,11 @@ class EditTeam(BaseModel):
 
 class MyIdentities(BaseModel):
     git_identities: list[str] = Field(default_factory=list, max_length=10)
+
+
+class LinkAuthor(BaseModel):
+    user_id: str
+    identity: str = Field(min_length=1, max_length=200)
 
 
 def _clean_repo(url):
@@ -446,6 +462,24 @@ def set_my_identities(team_id: str, body: MyIdentities, user=Depends(current_use
     return {"git_identities": ids, "note": "Run a sync so your commits are credited to you."}
 
 
+@router.post("/teams/{team_id}/link")
+def link_author(team_id: str, body: LinkAuthor, user=Depends(current_user), conn=Depends(get_conn)):
+    """Lead / supervisor: credit an unlinked git author (name or email) to a member of the team,
+    for when a student commits under an identity they never added themselves."""
+    t, my_role = team_access(conn, user, team_id)
+    require_live(t, "link identities")
+    require(my_role, ("lead", "supervisor"), "link a git author to a member")
+    m = one_as_dict(conn.execute("SELECT git_identities FROM team_members WHERE team_id = ? AND user_id = ? "
+                                 "AND member_code IS NOT NULL", (team_id, body.user_id)))
+    if not m:
+        raise HTTPException(404, "That person is not a member of this team.")
+    ids = sorted(set(json.loads(m["git_identities"] or "[]")) | {body.identity.strip()})
+    conn.execute("UPDATE team_members SET git_identities = ? WHERE team_id = ? AND user_id = ?",
+                 (json.dumps(ids), team_id, body.user_id))
+    conn.commit()
+    return {"git_identities": ids, "note": "Run a sync so these commits are credited to the member."}
+
+
 # ---------- Live sync (Component 2 pipeline for a real team) ----------
 
 def _sync_status(conn, team_id):
@@ -556,11 +590,12 @@ def get_chat(team_id: str, limit: int = Query(200, ge=1, le=1000),
     msgs = [{"msg_id": r["msg_id"], "sender": r["name"], "member_code": r["member_code"], "ts": r["ts"],
              "text": r["text"], "reply_to": r["reply_to"], "mine": r["user_id"] == user["user_id"],
              "team_role": r["team_role"]} for r in rows]
-    return {"read_only": False, "simulated": False, "messages": msgs[::-1]}
+    msgs = merge_chat(conn, team_id, msgs[::-1], limit)       # oldest first, with Buddy's messages added
+    return {"read_only": False, "simulated": False, "messages": msgs}
 
 
 @router.post("/teams/{team_id}/chat")
-def post_chat(team_id: str, body: ChatIn, user=Depends(current_user), conn=Depends(get_conn)):
+def post_chat(team_id: str, body: ChatIn, background: BackgroundTasks, user=Depends(current_user), conn=Depends(get_conn)):
     t, my_role = team_access(conn, user, team_id)
     require_live(t, "post in its chat")
     require(my_role, ("lead", "member"), "post in the chat")
@@ -584,10 +619,19 @@ def post_chat(team_id: str, body: ChatIn, user=Depends(current_user), conn=Depen
                                          "in_app": True}}])
         stage, conf = classify(text)
         save_labels(conn, "baseline", [(aid, stage, conf)])      # trained model re-labels it at the next sync
+        run_in_background(background, team_id, msg_id, m["member_code"], user["user_id"], ts, text)   # Component 1 (Buddy)
     return {"msg_id": msg_id, "ts": ts}
 
 
 # ---------- Behaviour (Component 2 output, behind the access check) ----------
+
+def _roster(conn, team):
+    """Member codes of everyone who signed up to a real team (supervisors are not analysed)."""
+    if team["is_research"]:
+        return []
+    return [c for (c,) in conn.execute("SELECT member_code FROM team_members WHERE team_id = ? "
+                                       "AND member_code IS NOT NULL", (team["team_id"],)).fetchall()]
+
 
 def _has_data(conn, team_id):
     if not conn.execute("SELECT 1 FROM activities WHERE team_id = ? LIMIT 1", (team_id,)).fetchone():
@@ -597,9 +641,9 @@ def _has_data(conn, team_id):
 @router.get("/teams/{team_id}/behavior/summary")
 def behavior_summary(team_id: str, days: int = Query(30, ge=1, le=365),
                      user=Depends(current_user), conn=Depends(get_conn)):
-    team_access(conn, user, team_id)
+    t, _ = team_access(conn, user, team_id)
     _has_data(conn, team_id)
-    s = service.team_summary(conn, team_id, days)
+    s = service.team_summary(conn, team_id, days, roster=_roster(conn, t))
     if s is None:
         raise HTTPException(404, "Only chat so far - sync the repository to see the work breakdown.")
     return s
@@ -608,9 +652,9 @@ def behavior_summary(team_id: str, days: int = Query(30, ge=1, le=365),
 @router.get("/teams/{team_id}/behavior/roles")
 def behavior_roles(team_id: str, window: str = Query("7d", pattern="^(3d|7d|30d|all)$"),
                    user=Depends(current_user), conn=Depends(get_conn)):
-    team_access(conn, user, team_id)
+    t, _ = team_access(conn, user, team_id)
     _has_data(conn, team_id)
-    return service.member_roles(conn, team_id, window)
+    return service.member_roles(conn, team_id, window, roster=_roster(conn, t))
 
 
 # ---------- Feedback (for the supervisor / team evaluation) ----------

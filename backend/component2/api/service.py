@@ -8,6 +8,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
+from component2.api.contract import CONTRACT_VERSION, data_status
 from component2.config import STAGES
 
 LAGGING_SHARE = 0.05          # a stage with < 5% of recent work is "lagging" (agree with C4)
@@ -86,8 +87,10 @@ def drift(conn, team_id):
     return {"overall_severity": overall, "dimensions": list(latest.values())}
 
 
-def members(conn, team_id):
-    """Each member's latest role vector and recent role history."""
+def members(conn, team_id, roster=()):
+    """Each member's latest role vector and recent role history.
+    roster: member codes of a real team's signed-up members, so someone with no activity at all
+    still appears (with no role) instead of silently disappearing."""
     rows = conn.execute("SELECT member_id, week, stage_mix, chat, dominant_stage FROM role_trends "
                         "WHERE team_id = ? ORDER BY member_id, week", (team_id,)).fetchall()
     result = {}
@@ -99,25 +102,33 @@ def members(conn, team_id):
         m["role_trend"].append({"week": week, "dominant": dominant})
     for m in result.values():
         m["role_trend"] = m["role_trend"][-TREND_WEEKS:]
+    for code in roster:
+        result.setdefault(code, {"member_id": code, "stage_mix": {}, "chat": {}, "dominant_role": None,
+                                 "role_trend": []})
     return list(result.values())
 
 
-def team_summary(conn, team_id, days=30):
+def team_summary(conn, team_id, days=30, roster=()):
     """The full Component 2 output for one team (the JSON agreed with C3 and C4)."""
     window, shares = stage_breakdown(conn, team_id, days)
     if window is None:
         return None
     lagging = [s for s, share in shares.items() if share < LAGGING_SHARE]
+    drift_part, member_part = drift(conn, team_id), members(conn, team_id, roster)
+    missing = [name for name, empty in (("stage_labels", not _labels_for_team(conn, team_id)),
+                                        ("drift", not drift_part["dimensions"]),
+                                        ("roles", not any(m["role_trend"] for m in member_part))) if empty]
     return {
         "component": "C2",
-        "version": "1.0",
+        "version": CONTRACT_VERSION,
         "team_id": team_id,
         "generated_at": _now(),
         "window": window,
         "stage_breakdown": shares,
         "lagging_stages": lagging,
-        "drift": drift(conn, team_id),
-        "members": members(conn, team_id),
+        "drift": drift_part,
+        "members": member_part,
+        "data_status": data_status(window["end"], missing),
     }
 
 # ---------- Role snapshots over different time windows ----------
@@ -132,10 +143,11 @@ def _shares(counter):
     return {s: round(counter[s] / total, 3) if total else 0.0 for s in STAGES}
 
 
-def member_roles(conn, team_id, window="7d"):
+def member_roles(conn, team_id, window="7d", roster=()):
     """Every member's mix of ALL stages in one window (3 days, 7 days, 30 days or the whole project),
     using code (commits + notebook cells) AND chat. Chat is shown separately and counts at half weight,
-    because talking about a stage is weaker evidence than doing it."""
+    because talking about a stage is weaker evidence than doing it.
+    roster: a real team's signed-up member codes, so members who never did anything are listed too."""
     rows = conn.execute("SELECT activity_id, member_id, source, ts FROM activities WHERE team_id = ? "
                         "ORDER BY ts", (team_id,)).fetchall()
     if not rows:
@@ -146,8 +158,11 @@ def member_roles(conn, team_id, window="7d"):
     labels = _labels_for_team(conn, team_id)
 
     code, chat = defaultdict(Counter), defaultdict(Counter)
-    members = sorted({m for _, m, _, _ in rows if m})
+    members = sorted({m for _, m, _, _ in rows if m} | set(roster))
+    last_active = {}
     for aid, member, source, ts in rows:
+        if member:
+            last_active[member] = ts                       # rows are in time order, so the last one wins
         if not member or _parse(ts) < start:
             continue
         stage = labels.get(aid)
@@ -166,7 +181,7 @@ def member_roles(conn, team_id, window="7d"):
         evidence = "none" if n_code + n_chat == 0 else ("low" if n_code + n_chat < 3 else "ok")
         result.append({"member_id": m, "code_items": n_code, "chat_items": n_chat,
                        "combined_mix": mix, "code_mix": _shares(code[m]), "chat_mix": _shares(chat[m]),
-                       "main_roles": main, "evidence": evidence})
+                       "main_roles": main, "evidence": evidence, "last_active": last_active.get(m)})
     return {"team_id": team_id, "window": window,
             "start": start.strftime("%Y-%m-%dT%H:%M:%SZ"), "end": rows[-1][3],
             "chat_weight": CHAT_WEIGHT, "members": result}

@@ -1,14 +1,4 @@
 @theme {
-  --color-background: oklch(0.985 0 0);
-  --color-foreground: oklch(0.21 0.01 260);
-  --color-surface: oklch(1 0 0);
-  --color-muted: oklch(0.55 0.01 260);
-  --color-border: oklch(0.9 0.005 260);
-  --color-primary: oklch(0.55 0.18 260);
-  --color-primary-foreground: oklch(0.985 0 0);
-  --color-danger: oklch(0.55 0.2 25);
-  --color-success: oklch(0.52 0.13 155);
-  --color-research: oklch(0.72 0.15 75);
   --color-background: #f9f9f7;
   --color-foreground: #0b0b0b;
   --color-surface: #fcfcfb;

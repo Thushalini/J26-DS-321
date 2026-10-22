@@ -27,6 +27,7 @@ component3/
   stage3_severity/         Stage 3
     severity.py              severity score, level, advice templates
   api/                     web API and database storage for the Alerts page
+  client/                  one-file helper a training loop uses to report a run (c3_reporter.py) and a demo
   collector/               reads real data to feed predict_live.py
     git_collector.py         commits per day, commit gap, notebook edits from a Git repo
     notebook_logs.py         finds training runs (epoch logs) in a team's notebooks
@@ -116,6 +117,21 @@ python -m backend.component3.collector.notebook_logs path/to/notebook.ipynb --sc
 ```
 
 A loop is used only when it has at least 3 epochs and shows the loss and both training and validation accuracy. GPU use is not in a notebook, so a neutral value is assumed and the output lists what was assumed.
+
+## Report a run from a training loop
+
+Many notebooks never print their training progress (for example Keras with `verbose=0`), so a log reader finds nothing. `client/c3_reporter.py` is a one-file helper that a training loop uses to **send each run to Component 3 directly**. It works with Keras (a callback), PyTorch, scikit-learn or any loop, needs no installs, and never stops training if sending fails.
+
+```
+from c3_reporter import C3Keras
+model.fit(X, y, validation_split=0.15, epochs=15,
+          callbacks=[C3Keras("http://127.0.0.1:8000", TEAM_ID, API_KEY, "mlp_small")])
+```
+
+It sends only the numbers of each epoch (loss, training and validation accuracy, GPU use if it can be measured). The server (`POST /c3/teams/{team_id}/runs`, key `C3_API_KEY` in `backend/.env`) fills in what the helper cannot know: GPU use and commits get a neutral value, the drift score comes from Component 2's table for that team (0.0 if there is none), and the other context facts get defaults. Every assumption is listed in the answer (`assumed`).
+`client/demo_report_run.py` trains a small real model and reports it, for a demo.
+
+Limits: the key is one shared secret, so a per-team token would be the next step; a team must add the helper to its training code.
 
 ## Results
 
